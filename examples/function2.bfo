@@ -1,0 +1,22 @@
+func add_cells(a, b) {
+    set c a
+    add c b
+    print c
+}  
+set fff_i 0   ; making i global to expose it to programs later
+func fff(c) {
+    while fff_i {
+        print c
+        sub fff_i 1
+    }
+}
+; This is the example of a predictable function
+; the function can be decoded in this object file
+add_cells(5, 10)
+set fff_i 5
+fff('H')
+
+; every variable is a memory address that points to a cell
+; the backend compiler will allocate memory for each variable using a stack
+; this memory is deallocated when out of scope and not for global variables
+; the variables only take integer values (mod 256) or ascii values

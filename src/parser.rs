@@ -1,7 +1,7 @@
 
 use crate::token::Token;
 use crate::lexer::Lexer;
-use crate::ast::{Expr, Stmt, Program};
+use crate::ast::{Expr, Stmt, Program, Type};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -32,53 +32,239 @@ impl<'a> Parser<'a> {
     pub fn parse_program(&mut self) -> Program {
         let mut statements = Vec::new();
         while self.current_token != Token::EOF {
-            statements.push(self.parse_statement());
+            statements.push(self.parse_top_level());
         }
         Program { statements }
     }
 
+    fn parse_top_level(&mut self) -> Stmt {
+        // Top level can be function declarations, variable declarations, or function calls
+        match &self.current_token {
+            Token::Void => self.parse_function_decl(),
+            Token::Int | Token::Cell | Token::String => {
+                // Could be function or variable
+                let type_token = self.current_token.clone();
+                self.advance();
+                if let Token::Identifier(name) = &self.current_token {
+                    let name_clone = name.clone();
+                    self.advance();
+                    if self.current_token == Token::LParen {
+                        // It's a function
+                        panic!("Non-void functions not yet supported");
+                    } else {
+                        // It's a variable declaration
+                        let var_type = self.token_to_type(&type_token);
+                        self.eat(Token::Equals);
+                        let value = self.parse_expr();
+                        self.eat(Token::Semicolon);
+                        Stmt::VarDecl { var_type, name: name_clone, value }
+                    }
+                } else {
+                    panic!("Expected identifier after type");
+                }
+            },
+            Token::Identifier(_) => {
+                // Top-level function call
+                let expr = self.parse_expr();
+                self.eat(Token::Semicolon);
+                Stmt::ExprStmt(expr)
+            },
+            _ => panic!("Unexpected token at top level: {:?}", self.current_token),
+        }
+    }
+
+    fn parse_function_decl(&mut self) -> Stmt {
+        self.eat(Token::Void);
+        let name = if let Token::Identifier(n) = &self.current_token {
+            n.clone()
+        } else {
+            panic!("Expected function name");
+        };
+        self.advance();
+        
+        self.eat(Token::LParen);
+        let params = self.parse_params();
+        self.eat(Token::RParen);
+        
+        self.eat(Token::LBrace);
+        let mut body = Vec::new();
+        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+            body.push(self.parse_statement());
+        }
+        self.eat(Token::RBrace);
+        
+        Stmt::FuncDecl {
+            name,
+            params,
+            return_type: Type::Void,
+            body,
+        }
+    }
+
+    fn parse_params(&mut self) -> Vec<(Type, String)> {
+        let mut params = Vec::new();
+        
+        if self.current_token == Token::RParen {
+            return params;
+        }
+        
+        loop {
+            let param_type = self.parse_type();
+            let name = if let Token::Identifier(n) = &self.current_token {
+                n.clone()
+            } else {
+                panic!("Expected parameter name");
+            };
+            self.advance();
+            params.push((param_type, name));
+            
+            if self.current_token == Token::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        
+        params
+    }
+
+    fn parse_type(&mut self) -> Type {
+        let t = self.token_to_type(&self.current_token);
+        self.advance();
+        t
+    }
+
+    fn token_to_type(&self, token: &Token) -> Type {
+        match token {
+            Token::Void => Type::Void,
+            Token::Int => Type::Int,
+            Token::Cell => Type::Cell,
+            Token::String => Type::String,
+            _ => panic!("Expected type, got {:?}", token),
+        }
+    }
+
     fn parse_statement(&mut self) -> Stmt {
         match &self.current_token {
-            Token::Let => self.parse_let(),
-            Token::Print => self.parse_print(),
+            Token::Int | Token::Cell | Token::String => self.parse_var_decl(),
+            Token::For => self.parse_for(),
             Token::While => self.parse_while(),
-            Token::Identifier(_) => self.parse_assign(), 
+            Token::Putc => self.parse_putc(),
+            Token::Identifier(_) => {
+                // Could be assignment or function call
+                let name = if let Token::Identifier(n) = &self.current_token {
+                    n.clone()
+                } else {
+                    unreachable!()
+                };
+                self.advance();
+                
+                if self.current_token == Token::Equals {
+                    // Assignment
+                    self.advance();
+                    let value = self.parse_expr();
+                    self.eat(Token::Semicolon);
+                    Stmt::Assign { name, value }
+                } else if self.current_token == Token::LParen {
+                    // Function call
+                    self.current_token = Token::Identifier(name.clone()); // Put it back
+                    let expr = self.parse_expr();
+                    self.eat(Token::Semicolon);
+                    Stmt::ExprStmt(expr)
+                } else {
+                    panic!("Unexpected token after identifier: {:?}", self.current_token);
+                }
+            },
             _ => panic!("Unexpected token at start of statement: {:?}", self.current_token),
         }
     }
 
-    fn parse_let(&mut self) -> Stmt {
-        self.eat(Token::Let);
-        let name = match &self.current_token {
-            Token::Identifier(s) => s.clone(),
-            _ => panic!("Expected identifier after let"),
+    fn parse_var_decl(&mut self) -> Stmt {
+        let var_type = self.parse_type();
+        let name = if let Token::Identifier(n) = &self.current_token {
+            n.clone()
+        } else {
+            panic!("Expected variable name");
         };
         self.advance();
         self.eat(Token::Equals);
         let value = self.parse_expr();
         self.eat(Token::Semicolon);
-        Stmt::Let { name, value }
+        Stmt::VarDecl { var_type, name, value }
     }
 
-    fn parse_assign(&mut self) -> Stmt {
-        let name = match &self.current_token {
-            Token::Identifier(s) => s.clone(),
-            _ => panic!("Expected identifier"),
-        };
-        self.advance();
-        self.eat(Token::Equals);
-        let value = self.parse_expr();
-        self.eat(Token::Semicolon);
-        Stmt::Assign { name, value }
-    }
-
-    fn parse_print(&mut self) -> Stmt {
-        self.eat(Token::Print);
+    fn parse_for(&mut self) -> Stmt {
+        self.eat(Token::For);
         self.eat(Token::LParen);
-        let expr = self.parse_expr();
-        self.eat(Token::RParen);
+        
+        let init = Box::new(self.parse_var_decl_no_semi());
         self.eat(Token::Semicolon);
-        Stmt::Print(expr)
+        
+        let condition = self.parse_expr();
+        self.eat(Token::Semicolon);
+        
+        let update = Box::new(self.parse_assignment_no_semi());
+        self.eat(Token::RParen);
+        
+        self.eat(Token::LBrace);
+        let mut body = Vec::new();
+        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+            body.push(self.parse_statement());
+        }
+        self.eat(Token::RBrace);
+        
+        Stmt::For { init, condition, update, body }
+    }
+
+    fn parse_var_decl_no_semi(&mut self) -> Stmt {
+        let var_type = self.parse_type();
+        let name = if let Token::Identifier(n) = &self.current_token {
+            n.clone()
+        } else {
+            panic!("Expected variable name");
+        };
+        self.advance();
+        self.eat(Token::Equals);
+        let value = self.parse_expr();
+        Stmt::VarDecl { var_type, name, value }
+    }
+
+    fn parse_assignment_no_semi(&mut self) -> Stmt {
+        let name = if let Token::Identifier(n) = &self.current_token {
+            n.clone()
+        } else {
+            panic!("Expected identifier");
+        };
+        self.advance();
+        
+        // Handle i++, i--
+        if self.current_token == Token::PlusPlus {
+            self.advance();
+            // i++ becomes i = i + 1
+            return Stmt::Assign {
+                name: name.clone(),
+                value: Expr::BinaryOp {
+                    left: Box::new(Expr::Variable(name)),
+                    op: Token::Plus,
+                    right: Box::new(Expr::Number(1)),
+                },
+            };
+        } else if self.current_token == Token::MinusMinus {
+            self.advance();
+            // i-- becomes i = i - 1
+            return Stmt::Assign {
+                name: name.clone(),
+                value: Expr::BinaryOp {
+                    left: Box::new(Expr::Variable(name)),
+                    op: Token::Minus,
+                    right: Box::new(Expr::Number(1)),
+                },
+            };
+        }
+        
+        self.eat(Token::Equals);
+        let value = self.parse_expr();
+        Stmt::Assign { name, value }
     }
 
     fn parse_while(&mut self) -> Stmt {
@@ -95,38 +281,134 @@ impl<'a> Parser<'a> {
         Stmt::While { condition, body }
     }
 
-    fn parse_expr(&mut self) -> Expr {
-        // For now, handle simple expressions (no precedence or complex nested ops logic yet, just primary + basic binary)
-        // Actually, let's implement basic precedence: Term (+,-) Term
-        
-        let mut left = self.parse_term();
+    fn parse_putc(&mut self) -> Stmt {
+        self.eat(Token::Putc);
+        self.eat(Token::LParen);
+        let expr = self.parse_expr();
+        self.eat(Token::RParen);
+        self.eat(Token::Semicolon);
+        Stmt::Putc(expr)
+    }
 
-        while self.current_token == Token::Plus || self.current_token == Token::Minus {
+    fn parse_expr(&mut self) -> Expr {
+        self.parse_comparison()
+    }
+
+    fn parse_comparison(&mut self) -> Expr {
+        let mut left = self.parse_additive();
+        
+        while self.current_token == Token::Less || self.current_token == Token::Greater {
             let op = self.current_token.clone();
             self.advance();
-            let right = self.parse_term();
-            left = Expr::BinaryOperation {
+            let right = self.parse_additive();
+            left = Expr::BinaryOp {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
             };
         }
+        
         left
     }
 
-    fn parse_term(&mut self) -> Expr {
+    fn parse_additive(&mut self) -> Expr {
+        let mut left = self.parse_postfix();
+        
+        while self.current_token == Token::Plus || self.current_token == Token::Minus {
+            let op = self.current_token.clone();
+            self.advance();
+            let right = self.parse_postfix();
+            left = Expr::BinaryOp {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+        
+        left
+    }
+
+    fn parse_postfix(&mut self) -> Expr {
+        let mut expr = self.parse_primary();
+        
+        loop {
+            match &self.current_token {
+                Token::LBracket => {
+                    self.advance();
+                    let index = self.parse_expr();
+                    self.eat(Token::RBracket);
+                    expr = Expr::ArrayAccess {
+                        array: Box::new(expr),
+                        index: Box::new(index),
+                    };
+                },
+                Token::Dot => {
+                    self.advance();
+                    let member = if let Token::Identifier(m) = &self.current_token {
+                        m.clone()
+                    } else {
+                        panic!("Expected member name after '.'");
+                    };
+                    self.advance();
+                    expr = Expr::MemberAccess {
+                        object: Box::new(expr),
+                        member,
+                    };
+                },
+                Token::LParen => {
+                    // Function call
+                    if let Expr::Variable(name) = expr {
+                        self.advance();
+                        let args = self.parse_args();
+                        self.eat(Token::RParen);
+                        expr = Expr::FunctionCall { name, args };
+                    } else {
+                        panic!("Invalid function call");
+                    }
+                },
+                _ => break,
+            }
+        }
+        
+        expr
+    }
+
+    fn parse_args(&mut self) -> Vec<Expr> {
+        let mut args = Vec::new();
+        
+        if self.current_token == Token::RParen {
+            return args;
+        }
+        
+        loop {
+            args.push(self.parse_expr());
+            if self.current_token == Token::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        
+        args
+    }
+
+    fn parse_primary(&mut self) -> Expr {
         match self.current_token.clone() {
             Token::Number(n) => {
                 self.advance();
                 Expr::Number(n)
             },
-            Token::Identifier(s) => {
+            Token::CharLiteral(c) => {
                 self.advance();
-                Expr::Variable(s)
+                Expr::CharLiteral(c)
             },
             Token::StringLiteral(s) => {
                 self.advance();
                 Expr::StringLiteral(s)
+            },
+            Token::Identifier(name) => {
+                self.advance();
+                Expr::Variable(name)
             },
             Token::LParen => {
                 self.advance();

@@ -20,27 +20,49 @@ impl<'a> Lexer<'a> {
         match self.input.peek() {
             None => Token::EOF,
             Some(&c) => match c {
-                '+' => { self.input.next(); Token::Plus },
-                '-' => { self.input.next(); Token::Minus },
+                '+' => {
+                    self.input.next();
+                    if let Some(&'+') = self.input.peek() {
+                        self.input.next();
+                        Token::PlusPlus
+                    } else {
+                        Token::Plus
+                    }
+                },
+                '-' => {
+                    self.input.next();
+                    if let Some(&'-') = self.input.peek() {
+                        self.input.next();
+                        Token::MinusMinus
+                    } else {
+                        Token::Minus
+                    }
+                },
+                '<' => { self.input.next(); Token::Less },
+                '>' => { self.input.next(); Token::Greater },
                 '=' => { self.input.next(); Token::Equals },
                 '(' => { self.input.next(); Token::LParen },
                 ')' => { self.input.next(); Token::RParen },
                 '{' => { self.input.next(); Token::LBrace },
                 '}' => { self.input.next(); Token::RBrace },
+                '[' => { self.input.next(); Token::LBracket },
+                ']' => { self.input.next(); Token::RBracket },
                 ';' => { self.input.next(); Token::Semicolon },
+                ',' => { self.input.next(); Token::Comma },
+                '.' => { self.input.next(); Token::Dot },
                 '/' => {
-                    self.input.next(); // consume first /
+                    self.input.next();
                     if let Some(&'/') = self.input.peek() {
-                        self.input.next(); // consume second /
+                        self.input.next();
                         self.skip_comment();
                         self.next_token()
                     } else {
-                        // TODO: Handle division or error, for now just panic or treat as special
                         panic!("Unexpected character: /");
                     }
                 },
                 '"' => self.read_string(),
-                c if c.is_alphabetic() => self.read_identifier(),
+                '\'' => self.read_char(),
+                c if c.is_alphabetic() || c == '_' => self.read_identifier(),
                 c if c.is_numeric() => self.read_number(),
                 _ => {
                     let c = self.input.next().unwrap();
@@ -79,9 +101,14 @@ impl<'a> Lexer<'a> {
         }
 
         match ident.as_str() {
-            "let" => Token::Let,
-            "print" => Token::Print,
+            "void" => Token::Void,
+            "int" => Token::Int,
+            "cell" => Token::Cell,
+            "string" => Token::String,
+            "for" => Token::For,
             "while" => Token::While,
+            "func" => Token::Func,
+            "putc" => Token::Putc,
             _ => Token::Identifier(ident),
         }
     }
@@ -106,9 +133,61 @@ impl<'a> Lexer<'a> {
                 self.input.next(); // consume closing "
                 return Token::StringLiteral(s);
             }
-            s.push(c);
-            self.input.next();
+            if c == '\\' {
+                self.input.next(); // consume backslash
+                if let Some(&escaped) = self.input.peek() {
+                    self.input.next();
+                    match escaped {
+                        'n' => s.push('\n'),
+                        't' => s.push('\t'),
+                        'r' => s.push('\r'),
+                        '\\' => s.push('\\'),
+                        '"' => s.push('"'),
+                        _ => {
+                            s.push('\\');
+                            s.push(escaped);
+                        }
+                    }
+                }
+            } else {
+                s.push(c);
+                self.input.next();
+            }
         }
         panic!("Unterminated string literal");
+    }
+
+    fn read_char(&mut self) -> Token {
+        self.input.next(); // consume opening '
+        let ch = if let Some(&c) = self.input.peek() {
+            self.input.next();
+            if c == '\\' {
+                // Escape sequence
+                if let Some(&escaped) = self.input.peek() {
+                    self.input.next();
+                    match escaped {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '\\' => '\\',
+                        '\'' => '\'',
+                        _ => escaped,
+                    }
+                } else {
+                    panic!("Incomplete escape sequence in char literal");
+                }
+            } else {
+                c
+            }
+        } else {
+            panic!("Empty char literal");
+        };
+
+        if let Some(&'\'') = self.input.peek() {
+            self.input.next(); // consume closing '
+            Token::CharLiteral(ch)
+        } else {
+            panic!("Unterminated char literal");
+        }
     }
 }

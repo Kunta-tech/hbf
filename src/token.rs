@@ -2,24 +2,42 @@
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     // Keywords
-    Let,
-    Print,
+    Void,
+    Int,
+    Cell,
+    String,
+    For,
     While,
-
+    Func,
+    
+    // Built-in functions
+    Putc,
+    
     // Identifiers & Literals
     Identifier(String),
     Number(i32),
     StringLiteral(String),
-
-    // Symbols
+    CharLiteral(char),
+    
+    // Operators
     Plus,       // +
     Minus,      // -
+    PlusPlus,   // ++
+    MinusMinus, // --
+    Less,       // <
+    Greater,    // >
     Equals,     // =
+    
+    // Delimiters
     LParen,     // (
     RParen,     // )
     LBrace,     // {
     RBrace,     // }
+    LBracket,   // [
+    RBracket,   // ]
     Semicolon,  // ;
+    Comma,      // ,
+    Dot,        // .
     
     // Meta
     EOF,

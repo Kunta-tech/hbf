@@ -1,0 +1,30 @@
+; function print_string breaks down due to not using string in parameter
+; such functions are not predictable and be decoded in this object file
+set g1 'H'
+print g1
+set g1 'e'
+print g1
+set g1 'l'
+print g1
+set g1 'l'
+print g1
+set g1 'o'
+print g1
+set g1 ','
+print g1
+set g1 ' '
+print g1
+set g1 'W'
+print g1
+set g1 'o'
+print g1
+set g1 'r'
+print g1
+set g1 'l'
+print g1
+set g1 'd'
+print g1
+set g1 '!'
+print g1
+set g1 '\n'
+print g1

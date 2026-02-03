@@ -1,0 +1,5 @@
+void test_for() {
+    for (int i = 0; i < 5; i++) {
+        putc('A');
+    }
+}

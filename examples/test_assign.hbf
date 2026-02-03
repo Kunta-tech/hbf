@@ -1,0 +1,3 @@
+void test_func(cell a, cell b) {
+    cell c = a;
+}

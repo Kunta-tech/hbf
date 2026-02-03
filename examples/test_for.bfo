@@ -1,0 +1,8 @@
+func test_for() {
+    set i 0
+    sub i 5
+    while i {
+        print 'A'
+        add i 1
+    }
+}

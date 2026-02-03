@@ -1,0 +1,6 @@
+void test_func(cell a, cell b) {
+    cell c = a + b;
+    putc(c);
+}
+
+test_func(5, 10);

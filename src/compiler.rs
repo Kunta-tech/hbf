@@ -45,9 +45,9 @@ impl Compiler {
 
     fn compile_stmt(&mut self, stmt: Stmt) {
         match stmt {
-            Stmt::Let { name, value } => {
-                // 1. Evaluate expression into a temporary cell (or the target cell directly if simple)
-                // For simplicity, let's treat the next free cell as the target for this variable.
+            Stmt::Declare { var_type: _, name, value } => {
+                // 1. Evaluate expression into a temporary cell
+                // As typical C-like, we allocate a new cell for this variable.
                 let cell_index = self.next_free_cell;
                 self.next_free_cell += 1;
                 self.symbol_table.insert(name, cell_index);

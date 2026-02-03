@@ -1,0 +1,12 @@
+void add_cells(cell a, cell b) {
+    cell c = a + b;
+    putc(c);
+}   
+void fff(int n, cell c) {
+    for (int i = 0; i < n; i++) {
+        putc(c);
+    }
+}
+
+add_cells(5, 10);
+fff(5, 'H');

@@ -1,0 +1,6 @@
+func test_func(a, b) {
+    set c a
+    add c b
+    print c
+}
+test_func(5, 10)

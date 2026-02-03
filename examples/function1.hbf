@@ -1,0 +1,9 @@
+void print_string(string s) {
+    // example of normal function
+    for (int i = 0; i < s.length; i++) {
+        cell c = s[i];
+        putc(c);
+    }
+}
+
+print_string("Hello, World!\n");
