@@ -106,9 +106,9 @@ char[] s = "Hi";
 for (int i = 0; i < s.length; i++) {
     putc(s[i]);
 }
-// Compiler substitutes 'i' with 0 then 1, generating:
-// putc(s_0);
-// putc(s_1);
+// Compiler substitutes 'i' with 0 then 1, and resolves s[0], s[1]:
+// putc('H');
+// putc('i');
 ```
 
 **Requirements for unrolling:**
@@ -166,6 +166,11 @@ void function_name(type param1, type param2) {
 }
 ```
 
+### Deterministic Inlining
+To ensure maximal optimization, HBF uses a deterministic inlining strategy:
+- **Virtual Inlining**: Functions taking strictly virtual parameters (`int`, `char`) are **automatically inlined**. This allows the compiler to resolve runtime arithmetic and folding at each specific call site.
+- **Physical BFO Functions**: Only functions taking strictly physical `cell` parameters are preserved as `func` definitions in the BFO output.
+
 ### Function Calls
 ```c
 function_name(arg1, arg2);
@@ -179,8 +184,9 @@ Currently only `void` functions are supported.
 ### `putc(expr)`
 Outputs a single character to stdout. 
 
-- **Physical**: If passed a `cell`, it emits `print cell_name`.
-- **Virtual/Literal**: If passed an `int`, `char`, or literal, it emits `print literal` (Direct Printing).
+- **Physical**: If passed a `cell` or a physical `cell[]` element, it emits `print name` (Direct Printing).
+- **Virtual/Literal**: If passed an `int`, `char`, or literal, it resolves to `print literal` (Direct Printing).
+- **Complex**: Complex expressions are materialized into a temporary cell before printing.
 
 ## Array Operations
 

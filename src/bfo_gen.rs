@@ -847,10 +847,11 @@ impl BFOGenerator {
     }
 
     fn is_predictable_function(&self, params: &[(Type, String)]) -> bool {
-        // Functions with array parameters are not predictable because they 
-        // require unrolling. int/char/cell parameters are fine in BFO functions.
+        // Functions with virtual parameters (int, char) or arrays are inlined.
+        // This allows 'Always-Virtual' folding to resolve arithmetic at call sites.
+        // Only functions taking strictly physical 'cell' parameters are kept in BFO.
         for (param_type, _) in params {
-            if let Type::Array(_) = param_type {
+            if *param_type != Type::Cell {
                 return false;
             }
         }

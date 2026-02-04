@@ -271,7 +271,63 @@ func repeat_char(count, c) {
 }
 ```
 
-## 4. Property & Access Folding
+## 4. Deterministic Inlining
+
+### Overview
+
+To satisfy the "Loose HBF -> Strict BFO" contract, the compiler uses deterministic inlining for all functions using only virtual parameters (`int`, `char`).
+
+### Literal Resolution at Call-Sites
+
+By inlining these functions, the compiler can substitute arguments with their call-site values and resolve complex arithmetic to zero-cost literals.
+
+**HBF:**
+```c
+void print_digit(int n) {
+    putc(48 + n);
+}
+void main() {
+    print_digit(1);
+}
+```
+
+**Optimized BFO:**
+```
+print 49      ; Resolved (48 + 1) during inlining
+```
+
+### Physical Modular Interface
+
+Only functions taking strictly physical `cell` parameters are preserved in BFO. This provides a clear, modular interface for tape-resident data while ensuring abstraction overhead is completely erased for everything else.
+
+## 5. Shorthand Binary Operations
+
+### Overview
+
+When updating a physical `cell` using its own current value (e.g., `A = A + i`), the compiler avoids redundant reconstruction.
+
+### Optimized Lowering
+
+Instead of clearing the variable and rebuilding it (`set A 0; add A A; add A i`), the compiler detects the shorthand pattern and emits a single, atomic BFO instruction.
+
+**HBF:**
+```c
+cell A = 65;
+A = A + 5;
+```
+
+**BFO:**
+```
+set A 65
+add A 5       ; Atomic update, no redundancy
+```
+
+**Supported Patterns:**
+- `A = A + B` -> `add A B`
+- `A = B + A` -> `add A B`
+- `A = A - B` -> `sub A B`
+
+## 6. Property & Access Folding
 
 ### Overview
 

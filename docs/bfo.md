@@ -5,9 +5,10 @@ BFO is the intermediate representation between HBF source code and Brainfuck out
 ## Purpose
 
 BFO serves as:
-1. **Optimization target**: Easier to optimize than raw Brainfuck
-2. **Debug format**: Human-readable representation of compiled code
-3. **Linking format**: Allows separate compilation and linking
+1. **Optimization target**: All high-level abstractions (virtual types, loops, nested math) are erased before BFO generation.
+2. **Predetermined IR**: BFO output is strictly deterministic, using only literal assignments and atomic cell operations.
+3. **Debug format**: Human-readable representation of optimized, tape-ready code.
+4. **Linking format**: Allows separate compilation and linking of pre-optimized modules.
 
 ## Syntax
 
@@ -110,20 +111,22 @@ void print_string(string s) {
 print_string("Hello");
 ```
 
-**BFO (inlined):**
+**BFO (Deterministic Inlining):**
 ```
-; function print_string breaks down due to not using string in parameter
-set g1 'H'
-print g1
-set g1 'e'
-print g1
-set g1 'l'
-print g1
-set g1 'l'
-print g1
-set g1 'o'
-print g1
+; unpredictable function print_string in HBF is inlined in BFO
+set tmp 'H'
+print tmp
+set tmp 'e'
+print tmp
+set tmp 'l'
+print tmp
+set tmp 'l'
+print tmp
+set tmp 'o'
+print tmp
 ```
+> [!NOTE]
+> In the latest compiler, `putc('H')` resolves to `print 'H'` (Direct Printing), eliminating even the `tmp` cell for literals.
 
 ## Memory Model
 
