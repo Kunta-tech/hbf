@@ -1,9 +1,0 @@
-func test_for() {
-    print 'A'
-    print 'A'
-    print 'A'
-    print 'A'
-    print 'A'
-}
-func main() {
-}

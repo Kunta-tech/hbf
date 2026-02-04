@@ -20,13 +20,14 @@ BFO uses an assembly-like syntax with instructions and operands.
 
 ### Instructions
 
-#### `set <var> <value>`
-Set a variable to a value:
+#### `set <var> <literal>`
+Set a variable to a literal value (integer or character):
 ```
 set g1 'H'      ; Set g1 to ASCII 'H' (72)
 set x 10        ; Set x to 10
-set y x         ; Copy x to y
 ```
+> [!IMPORTANT]
+> BFO `set` does **not** support variable-to-variable assignment. All variable movement and folding must be handled by the HBF compiler's Virtual Variable model before generating BFO.
 
 #### `add <var> <value>`
 Add to a variable:
@@ -70,6 +71,15 @@ func add_cells(a, b) {
 ```
 add_cells(5, 10)
 fff('H')
+```
+
+### Variable Initialization (Add-to-Zero)
+
+Since `set` only supports literals, moving a value from one variable to another (e.g., in function parameters or loop counters) is achieved via the **Add-to-Zero** pattern:
+
+```
+set target 0    ; Clear target
+add target src  ; Copy src value into target
 ```
 
 ## Compilation Strategy
@@ -167,40 +177,28 @@ This outputs:
 
 ## Optimizations
 
-### Constant Folding & Dead Variable Elimination
+### Always-Virtual Variables
 
-**Principle:** Since I/O (`putc`) only works with `cell` types, intermediate `int` variables can be folded away.
+**Principle:** Variables of type `int` and `char` are **Virtual**. They exist only in the compiler's symbol table and are folded/evaluated at compile-time. They are only "materialized" into BFO `set` instructions when needed for I/O.
 
 **HBF:**
 ```c
-int a1 = 5;
-int a2 = 10;
-int a3 = a1 + a2;
-cell c = a3;
+int a = 5;
+int b = 10;
+cell c = a + b;
 putc(c);
 ```
 
-**Naive BFO:**
+**BFO:**
 ```
-set a1 5
-set a2 10
-set a3 a1
-add a3 a2
-set c a3
+set c 15      ; HBF compiler evaluates 5 + 10 = 15
 print c
 ```
 
-**Optimized BFO:**
-```
-set c 15      ; Constant folded: 5 + 10 = 15
-print c
-```
-
-**Optimizations applied:**
-1. **Constant propagation**: `a1=5`, `a2=10` tracked
-2. **Expression evaluation**: `a1 + a2` → `5 + 10` → `15`
-3. **Dead code elimination**: `a1`, `a2`, `a3` removed (never used for I/O)
-4. **Direct assignment**: Result folded into `c`
+**Workflow:**
+1. **Silent Updates**: `int a = 5` and `int b = 10` update internal state but emit NO BFO.
+2. **Compile-Time Evaluation**: `a + b` is evaluated by the compiler.
+3. **Materialization**: The result `15` is emitted only when assigned to the physical `cell c`.
 
 **Benefits:**
 - ✅ Eliminates unnecessary variables

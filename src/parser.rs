@@ -41,7 +41,7 @@ impl<'a> Parser<'a> {
         // Top level can be function declarations, variable declarations, or function calls
         match &self.current_token {
             Token::Void => self.parse_function_decl(),
-            Token::Int | Token::Cell | Token::String => {
+            Token::Int | Token::Cell | Token::Char | Token::String => {
                 // Could be function or variable
                 let type_token = self.current_token.clone();
                 self.advance();
@@ -130,8 +130,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Type {
-        let t = self.token_to_type(&self.current_token);
+        let mut t = self.token_to_type(&self.current_token);
         self.advance();
+        
+        // Handle array brackets: type[]
+        while self.current_token == Token::LBracket {
+            self.advance();
+            self.eat(Token::RBracket);
+            t = Type::Array(Box::new(t));
+        }
         t
     }
 
@@ -140,14 +147,15 @@ impl<'a> Parser<'a> {
             Token::Void => Type::Void,
             Token::Int => Type::Int,
             Token::Cell => Type::Cell,
-            Token::String => Type::String,
+            Token::Char => Type::Char,
+            Token::String => Type::Array(Box::new(Type::Char)), // char[]
             _ => panic!("Expected type, got {:?}", token),
         }
     }
 
     fn parse_statement(&mut self) -> Stmt {
         match &self.current_token {
-            Token::Int | Token::Cell | Token::String => self.parse_var_decl(),
+            Token::Int | Token::Cell | Token::Char | Token::String => self.parse_var_decl(),
             Token::For => self.parse_for(),
             Token::Forn => self.parse_forn(),
             Token::While => self.parse_while(),
@@ -155,7 +163,7 @@ impl<'a> Parser<'a> {
             Token::Identifier(_) => {
                 // Peek at next token using a temporary variable if possible
                 // Since our parser doesn't have peek, we'll use a match on the current state
-                let name = if let Token::Identifier(n) = &self.current_token {
+                let _name = if let Token::Identifier(n) = &self.current_token {
                     n.clone()
                 } else {
                     unreachable!()
@@ -169,18 +177,24 @@ impl<'a> Parser<'a> {
                 // Save current state for simpler handling
                 let expr = self.parse_expr();
                 if self.current_token == Token::Equals {
-                    // It was actually part of an assignment (variable = ...)
-                    // But wait, parse_expr handles variables but not as L-values for =
-                    // This is tricky. Let's just fix the advance bug.
-                    
-                    // The correct way: check if Expr is Variable
-                    if let Expr::Variable(var_name) = expr {
-                        self.eat(Token::Equals);
-                        let value = self.parse_expr();
-                        self.eat(Token::Semicolon);
-                        Stmt::Assign { name: var_name, value }
-                    } else {
-                        panic!("Invalid assignment target");
+                    match expr {
+                        Expr::Variable(var_name) => {
+                            self.eat(Token::Equals);
+                            let value = self.parse_expr();
+                            self.eat(Token::Semicolon);
+                            Stmt::Assign { name: var_name, value }
+                        },
+                        Expr::ArrayAccess { array, index } => {
+                            if let Expr::Variable(array_name) = *array {
+                                self.eat(Token::Equals);
+                                let value = self.parse_expr();
+                                self.eat(Token::Semicolon);
+                                Stmt::IndexedAssign { name: array_name, index: *index, value }
+                            } else {
+                                panic!("Only variable arrays can be assigned to");
+                            }
+                        },
+                        _ => panic!("Invalid assignment target"),
                     }
                 } else {
                     // Was a function call or just an expression statement
@@ -233,14 +247,14 @@ impl<'a> Parser<'a> {
         self.eat(Token::Forn);
         self.eat(Token::LParen);
         
-        let var_type = self.parse_type();
+        // Match forn(int i = 0);
+        let _var_type = self.parse_type();
         let name = if let Token::Identifier(n) = &self.current_token {
             n.clone()
         } else {
-            panic!("Expected variable name in forn loop");
+            panic!("Expected loop variable name");
         };
         self.advance();
-        
         self.eat(Token::Equals);
         let count = self.parse_expr();
         self.eat(Token::RParen);
@@ -252,7 +266,7 @@ impl<'a> Parser<'a> {
         }
         self.eat(Token::RBrace);
         
-        Stmt::Forn { var_type, name, count, body }
+        Stmt::Forn { name, count, body }
     }
 
     fn parse_var_decl_no_semi(&mut self) -> Stmt {
@@ -455,7 +469,30 @@ impl<'a> Parser<'a> {
                 self.eat(Token::RParen);
                 expr
             },
+            Token::LBrace => self.parse_array_literal(),
             _ => panic!("Unexpected token in expression: {:?}", self.current_token),
         }
+    }
+
+    fn parse_array_literal(&mut self) -> Expr {
+        self.eat(Token::LBrace);
+        let mut elements = Vec::new();
+        
+        if self.current_token == Token::RBrace {
+            self.advance();
+            return Expr::ArrayLiteral(elements);
+        }
+        
+        loop {
+            elements.push(self.parse_expr());
+            if self.current_token == Token::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        
+        self.eat(Token::RBrace);
+        Expr::ArrayLiteral(elements)
     }
 }

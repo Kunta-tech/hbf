@@ -104,6 +104,7 @@ impl<'a> Lexer<'a> {
             "void" => Token::Void,
             "int" => Token::Int,
             "cell" => Token::Cell,
+            "char" => Token::Char,
             "string" => Token::String,
             "for" => Token::For,
             "forn" => Token::Forn,

@@ -1,121 +1,100 @@
 # Compiler Optimizations
 
-## 1. Constant Folding & Dead Variable Elimination
+## 1. Always-Virtual Variable Model
 
 ### Overview
 
-Since I/O in HBF only works with `cell` types (`putc` requires `cell`), intermediate `int` variables used purely for computation can be eliminated and their values folded directly into the `cell` variables.
+HBF employs an "Always-Virtual" model for all non-`cell` types (`int`, `char`, and their arrays). These variables exist purely in the compiler's symbol table during compilation and do not occupy a fixed slot on the Brainfuck tape by default.
 
 ### The Problem
 
-**Unoptimized code:**
+In traditional compilers, every variable maps to a memory address. In Brainfuck, memory (the tape) is a precious resource. Allocating tape cells for intermediate computation counters or constants is inefficient.
+
+### The Solution: Virtual Variables
+
+**HBF:**
 ```c
-int a1 = 5;
-int a2 = 10;
-int a3 = a1 + a2;
-cell c = a3;
+int a = 5;
+int b = 10;
+cell c = a + b;
 putc(c);
 ```
 
-**Naive BFO (6 instructions):**
+**BFO (2 instructions):**
 ```
-set a1 5
-set a2 10
-set a3 a1
-add a3 a2
-set c a3
-print c
-```
-
-### The Solution
-
-**Optimized BFO (2 instructions):**
-```
-set c 15      ; 5 + 10 = 15 (constant folded)
+set c 15      ; Materialized literal result
 print c
 ```
 
 ### How It Works
 
-1. **Track variable values**: As declarations are processed, track constant values
-2. **Substitute variables**: Replace variable references with their known values
-3. **Evaluate expressions**: Compute constant arithmetic (`5 + 10` → `15`)
-4. **Eliminate dead variables**: Remove `int` variables that are never used for I/O
-5. **Fold into cell**: Assign final computed value directly to `cell` variable
+1. **Silent Initialization**: `int a = 5` and `int b = 10` are recorded in the compiler's memory. No BFO code is generated.
+2. **Compile-Time Evaluation**: When `a + b` is encountered, the compiler resolves it to `15` using its internal state.
+3. **Lazy Materialization**: A virtual value is only "materialized" (emitted as a BFO `set` instruction) when it is:
+   - Assigned to a physical `cell`.
+   - Used as an operand in an I/O operation (`putc`).
+4. **Direct Literal Printing**: If a value is used purely for I/O, the compiler skips variable assignment entirely and emits `print <literal>` (e.g., `print 'H'`).
 
-### Optimization Rules
+### Global Virtual Folding
 
-**Variables eliminated:**
-- ✅ `int` variables with constant values
-- ✅ `int` variables only used in expressions
-- ✅ Intermediate `int` variables assigned to `cell`
-
-**Variables kept:**
-- ❌ `cell` variables (used for I/O)
-- ❌ `int` variables with non-constant values
-- ❌ Variables used in multiple places
-
-### Example: Complex Expression
+Virtual variables defined at the global scope are also tracked and folded into function bodies.
 
 **HBF:**
 ```c
-int x = 10;
-int y = 20;
-int z = x + y - 5;
-cell result = z;
-putc(result);
+int a = 2;
+char b = 'a';
+
+void main() {
+    putc(a + b);
+}
 ```
 
-**Optimized BFO:**
+**BFO:**
 ```
-set result 25    ; 10 + 20 - 5 = 25
-print result
+func main() {
+    print 99    ; Evaluated (2 + 97) at compile-time
+}
 ```
 
 ### Benefits
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Variables | 4 | 1 | **75% reduction** |
-| Instructions | 6 | 2 | **67% reduction** |
-| Memory cells | 4 | 1 | **75% reduction** |
+| Metric | Non-Virtual | Always-Virtual | Improvement |
+|--------|-------------|----------------|-------------|
+| Variables Used | 3 | 0 | **100% reduction** |
+| Tape Cells Used| 3 | 0 | **100% reduction** |
+| Instructions | 6 | 1 | **83% reduction** |
 
 ---
 
-## 2. Loop Unrolling Optimization
+## 2. Loop Unrolling & Materialization
 
 ### Overview
 
-The HBF compiler automatically **unrolls** `for` loops with constant iteration counts, eliminating loop overhead entirely by repeating the loop body inline.
+The HBF compiler automatically **unrolls** `for` loops with constant iteration counts. This works in tandem with the Virtual Variable model to resolve array indexing at compile-time.
 
-### The Problem
-
-Loops have overhead in Brainfuck - they require loop counter management, comparisons, and branching. For small, constant iteration counts, this overhead is wasteful.
-
-### The Solution: Loop Unrolling
+### The Solution: Direct Literal Unrolling
 
 **HBF:**
 ```c
-for (int i = 0; i < 5; i++) {
-    putc('A');
+char[] s = "Hi";
+for (int i = 0; i < s.length; i++) {
+    putc(s[i]);
 }
 ```
 
-**Optimized BFO (unrolled):**
+**Optimized BFO (2 instructions):**
 ```
-print 'A'
-print 'A'
-print 'A'
-print 'A'
-print 'A'
+print 'H'
+print 'i'
 ```
 
 ### How It Works
 
-1. **Detect constant bounds**: Compiler identifies `for (int i = 0; i < CONSTANT; i++)`
-2. **Evaluate iteration count**: Calculates how many times the loop runs
-3. **Repeat body**: Generates the loop body statements N times inline
-4. **Eliminate loop variable**: No loop counter needed in BFO
+1. **Detect constant bounds**: Compiler identifies `for (int i = 0; i < CONSTANT; i++)` or `i < arr.length`.
+2. **Virtual Array Resolution**: The compiler looks up the array `s` in its memory-only symbol table.
+3. **Literal Substitution**: For each iteration `i`, the compiler resolves `s[i]` to its literal value (e.g., `'H'`).
+4. **Direct Printing**: Instead of moving the pointer and setting values, the compiler emits direct `print` instructions for the substitution results.
+5. **Zero Footprint**: The loop variable `i` and the array `s` never touch the physical Brainfuck tape.
 
 ### Pattern Detection
 
@@ -123,15 +102,17 @@ The compiler automatically unrolls when it detects:
 
 ```c
 for (int i = 0; i < CONSTANT; i++)
+// OR
+for (int i = 0; i < arr.length; i++)
 ```
 
 **Requirements:**
 - ✅ Init: `int i = 0` (must start at zero)
-- ✅ Condition: `i < CONSTANT` (less-than with compile-time constant)
+- ✅ Condition: `i < CONSTANT` or `i < arr.length` (where array size is known)
 - ✅ Update: `i++` (increment by one)
 
 **Not unrolled:**
-- ❌ `for (int i = 0; i < n; i++)` - `n` is runtime variable
+- ❌ `for (int i = 0; i < n; i++)` - `n` is a runtime variable
 - ❌ `for (int i = 1; i < 10; i++)` - doesn't start at 0
 - ❌ `for (int i = 0; i <= 5; i++)` - uses `<=` instead of `<`
 
@@ -140,31 +121,28 @@ for (int i = 0; i < CONSTANT; i++)
 | Benefit | Description |
 |---------|-------------|
 | **Zero overhead** | No loop counter, no comparisons, no branching |
-| **Smaller code** | For small iteration counts, unrolled code is simpler |
+| **Efficient Array Access** | Converts variable indices `arr[i]` into fixed cell references `arr_0`, `arr_1` |
+| **Constant-Time Memory** | Allows indexing into memory cells that aren't natively addressable via variables in BF |
 | **Faster execution** | Direct execution without loop management |
 
-### Example: Before vs After
+### Example: Array Processing
 
-**Before (with loop):**
-```
-set i 0
-sub i 5
-while i {
-    print 'A'
-    add i 1
+**HBF:**
+```c
+char[] s = "OK";
+for (int i = 0; i < s.length; i++) {
+    putc(s[i]);
 }
 ```
-**5 instructions + loop overhead**
 
-**After (unrolled):**
+**BFO (unrolled and substituted):**
 ```
-print 'A'
-print 'A'
-print 'A'
-print 'A'
-print 'A'
+set s_0 'O'
+set s_1 'K'
+print s_0
+print s_1
 ```
-**5 instructions, zero overhead**
+**4 instructions, zero loop overhead, constant-time indexing.**
 
 ---
 
@@ -178,7 +156,7 @@ For runtime-variable iteration counts, HBF provides the `forn` construct which g
 
 When the iteration count isn't known at compile time, loop unrolling isn't possible. We need a native loop construct.
 
-### The Solution: `forn` Construct
+### The Solution: `forn` Construct & Add-to-Zero Init
 
 **HBF:**
 ```c
@@ -196,12 +174,37 @@ while n {
 }
 ```
 
+### Add-to-Zero Initialization
+
+When the loop counter is initialized from a runtime variable (like a function parameter), the compiler uses an **Add-to-Zero** pattern to satisfy the BFO `set` (literal-only) restriction:
+
+**HBF:**
+```c
+void fff(int count, cell c) {
+    forn(cell i = count) {
+        putc(c);
+    }
+}
+```
+
+**BFO:**
+```
+func fff(count, c) {
+    set i 0      ; Clear/initialize i
+    add i count  ; "Copy" count to i
+    while i {
+        print c
+        sub i 1
+    }
+}
+```
+
 ### How It Works
 
-1. **Initialize counter**: Set `n` to the iteration count
-2. **Loop while non-zero**: BFO `while n` checks `n != 0`
-3. **Decrement**: Each iteration subtracts 1 from `n`
-4. **Terminate at zero**: Loop stops when `n` reaches 0
+1. **Initialize counter**: For literals, uses `set n literal`. For variables, uses `set n 0` + `add n var`.
+2. **Loop while non-zero**: BFO `while n` checks `n != 0`.
+3. **Decrement**: Each iteration subtracts 1 from `n`.
+4. **Terminate at zero**: Loop stops when `n` reaches 0.
 
 ### Why Countdown?
 

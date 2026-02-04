@@ -1,10 +1,12 @@
 func add_cells(a, b) {
-    set c a
+    set c 0
+    add c a
     add c b
     print c
 }
 func fff(n, c) {
-    set i n
+    set i 0
+    add i n
     while i {
         print c
         sub i 1

@@ -6,15 +6,19 @@ HBF (Higher Brainfuck) is a C-like compiled language that targets Brainfuck thro
 
 ### Primitive Types
 - **`int`**: Integer type (8-bit, mod 256)
-- **`cell`**: Raw memory cell type (8-bit, mod 256)
-- **`string`**: String type (compile-time constant)
+- **`cell`**: Raw memory cell type (native memory block)
+- **`char`**: Character type (stores values like 'A')
 - **`void`**: Function return type (no return value)
 
+### Combined Types
+- **`type[]`**: Array of the specified type (e.g., `cell[]`, `int[]`, `char[]`)
+
 ### Type Semantics
-- All numeric values are stored as 8-bit values (0-255)
-- `int` and `cell` are functionally equivalent at runtime but semantically distinct
-- `cell` is used for raw byte manipulation and I/O
-- `int` is used for arithmetic and loop counters
+- **Physical vs Virtual Types**:
+  - **`cell` / `cell[]`**: **Physical**. These mapped directly to Brainfuck tape cells with stable addresses (`name`, `arr_1`, etc.).
+  - **`int` / `char` / `int[]` / `char[]`**: **Virtual**. These exist only in the compiler's symbol table during compilation. They do not occupy tape space by default.
+- **Lazy Materialization**: Virtual variables are "materialized" into BFO instructions only when they are needed for I/O (`putc`) or when assigned to a Physical `cell`.
+- All numeric values are stored as 8-bit values (0-255).
 
 ## Variables
 
@@ -37,6 +41,7 @@ cell c = 65;
 int x = 42;
 ```
 
+
 ### Character Literals
 ```c
 cell c = 'A';      // ASCII value 65
@@ -44,9 +49,35 @@ cell newline = '\n'; // Escape sequences supported
 ```
 
 ### String Literals
+String literals like `"Hello"` are automatically converted to an `ArrayLiteral` of `char` (cell) values at compile time.
+
 ```c
-"Hello, World!\n"
+char[] s = "Hello"; 
+// Equivalent to char[] s = {'H', 'e', 'l', 'l', 'o'};
 ```
+
+### Array Literals
+Arrays can be initialized using curly braces:
+```c
+cell[] arr = {65, 66, 67};
+```
+
+## Internal Variables
+
+The compiler uses a special `tmp` variable to materialize virtual literals for I/O:
+
+**HBF:**
+```c
+putc('A');
+```
+
+**BFO:**
+```
+set tmp 'A'
+print tmp
+```
+
+This prevents virtual variables from needing a dedicated slot on the Brainfuck tape when they are only used for transient operations.
 
 ## Operators
 
@@ -59,22 +90,26 @@ cell newline = '\n'; // Escape sequences supported
 - `>` Greater than
 
 ### Assignment
-- `=` Assignment
+- `=` Variable assignment
+- `arr[i] = val` Indexed assignment (constant index only)
 
 ### Array Access
-- `s[i]` String/array indexing
+- `arr[i]` Array indexing (constant index or unrollable loop variable)
 
 ## Control Flow
 
 ### For Loops (Loop Unrolling)
 
-Standard for loops with **constant bounds** are **unrolled** at compile time:
+Standard for loops with **constant bounds** (including `.length`) are **unrolled** at compile time. This allows the use of loop variables as array indices.
 
 ```c
-for (int i = 0; i < 5; i++) {
-    putc('A');
+char[] s = "Hi";
+for (int i = 0; i < s.length; i++) {
+    putc(s[i]);
 }
-// Compiler generates 5 sequential putc('A') statements
+// Compiler substitutes 'i' with 0 then 1, generating:
+// putc(s_0);
+// putc(s_1);
 ```
 
 **Requirements for unrolling:**
@@ -83,11 +118,10 @@ for (int i = 0; i < 5; i++) {
 
 **Compiled BFO:**
 ```
-print 'A'
-print 'A'
-print 'A'
-print 'A'
-print 'A'
+set s_0 'H'
+set s_1 'i'
+print s_0
+print s_1
 ```
 
 ### forn Loops (Native Countdown)
@@ -151,10 +185,10 @@ cell c = 'H';
 putc(c);
 ```
 
-## String Operations
+## Array Operations
 
 ### `.length`
-Returns the length of a string:
+Returns the length of an array as a compile-time constant:
 ```c
 for (int i = 0; i < s.length; i++) {
     // ...
@@ -162,9 +196,9 @@ for (int i = 0; i < s.length; i++) {
 ```
 
 ### Array Indexing `[i]`
-Access individual characters:
+Access individual elements:
 ```c
-cell c = s[i];
+cell c = arr[0];
 ```
 
 ## Comments
@@ -201,9 +235,9 @@ add_cells(5, 10);
 repeat_char(5, 'H');
 ```
 
-### Example 3: String Processing
+### Example 3: Array & String Processing
 ```c
-void print_string(string s) {
+void print_string(char[] s) {
     for (int i = 0; i < s.length; i++) {
         cell c = s[i];
         putc(c);

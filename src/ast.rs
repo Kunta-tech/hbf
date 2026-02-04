@@ -6,7 +6,8 @@ pub enum Type {
     Void,
     Int,
     Cell,
-    String,
+    Char,
+    Array(Box<Type>),
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,7 @@ pub enum Expr {
         name: String,
         args: Vec<Expr>,
     },
+    ArrayLiteral(Vec<Expr>),
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +45,11 @@ pub enum Stmt {
     },
     Assign {
         name: String,
+        value: Expr,
+    },
+    IndexedAssign {
+        name: String,
+        index: Expr,
         value: Expr,
     },
     FuncDecl {
@@ -59,7 +66,6 @@ pub enum Stmt {
         body: Vec<Stmt>,
     },
     Forn {
-        var_type: Type,
         name: String,
         count: Expr,
         body: Vec<Stmt>,

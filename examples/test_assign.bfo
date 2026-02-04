@@ -1,3 +1,4 @@
 func test_func(a, b) {
-    set c a
+    set c 0
+    add c a
 }

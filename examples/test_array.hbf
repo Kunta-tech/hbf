@@ -1,0 +1,24 @@
+void main() {
+    // Array of cells
+    cell[] arr = {65, 66, 67};
+    putc(arr[0]);
+    putc(arr[1]);
+    putc(arr[2]);
+    putc('\n');
+
+    // char[] as string
+    char[] s = "Hello";
+    
+    // Member access .length
+    for (int i = 0; i < s.length; i++) {
+        putc(s[i]);
+    }
+    putc('\n');
+
+    // Indexed assignment
+    s[0] = 'h';
+    for (int i = 0; i < s.length; i++) {
+        putc(s[i]);
+    }
+    putc('\n');
+}

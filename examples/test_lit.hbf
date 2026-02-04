@@ -1,0 +1,6 @@
+int a = 2;
+char b = 'a';
+
+void main() {
+    putc(a+b); // convert char -> int then int + int
+}
