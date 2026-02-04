@@ -1,0 +1,6 @@
+func main() {
+    print 65
+    print ' '
+    print 66
+    print '\n'
+}

@@ -1,0 +1,11 @@
+func print_digit(n) {
+    set tmp 0
+    add tmp 48
+    add tmp n
+    print tmp
+}
+func main() {
+    print_digit(1)
+    print_digit(2)
+    print '\n'
+}

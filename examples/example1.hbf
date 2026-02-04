@@ -1,7 +1,0 @@
-int a1 = 5;
-int a2 = 10;
-int a3 = a1 + a2;
-cell c = a3;
-
-// putc takes cell as argument
-putc(c);

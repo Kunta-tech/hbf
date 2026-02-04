@@ -1,8 +1,0 @@
-void print_string(char[] s) {
-    // example of normal function
-    for (int i = 0; i < s.length; i++) {
-        putc(s[i]);
-    }
-}
-
-print_string("Hello, World!\n");

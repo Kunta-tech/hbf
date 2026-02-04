@@ -1,0 +1,10 @@
+void main() {
+    cell count = 5;
+    
+    // Generates a native BFO while loop (countdown)
+    forn(cell i = count) {
+        putc('*');
+        // Loop counter 'i' is automatically decremented in 'forn'
+    }
+    putc('\n');
+}

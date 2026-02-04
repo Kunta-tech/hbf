@@ -1,4 +1,0 @@
-func test_func(a, b) {
-    set c 0
-    add c a
-}

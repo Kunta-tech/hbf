@@ -1,0 +1,12 @@
+void main() {
+    // Physical cells on the tape
+    cell[] vals = {65, 66, 67};
+    
+    // Assignment and retrieval
+    vals[0] = vals[2]; // 'C'
+    
+    putc(vals[0]); // 'C'
+    putc(vals[1]); // 'B'
+    putc(vals[2]); // 'C'
+    putc('\n');
+}

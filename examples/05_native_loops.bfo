@@ -1,0 +1,10 @@
+func main() {
+    set count 5
+    set i 0
+    add i count
+    while i {
+        print '*'
+        sub i 1
+    }
+    print '\n'
+}

@@ -1,0 +1,10 @@
+int a = 65;
+char b = ' ';
+int c = a + 1; // 66
+
+void main() {
+    putc(a); // 'A'
+    putc(b); // ' '
+    putc(c); // 'B'
+    putc('\n');
+}

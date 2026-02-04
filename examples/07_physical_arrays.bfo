@@ -1,0 +1,11 @@
+func main() {
+    set vals_1 65
+    set vals_2 66
+    set vals_3 67
+    set vals_1 0
+    add vals_1 vals_3
+    print vals_1
+    print vals_2
+    print vals_3
+    print '\n'
+}

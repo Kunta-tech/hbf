@@ -1,0 +1,15 @@
+; unpredictable function print_str
+func main() {
+    print 'H'
+    print 'B'
+    print 'F'
+    print ' '
+    print 'i'
+    print 's'
+    print ' '
+    print 'F'
+    print 'A'
+    print 'S'
+    print 'T'
+    print '\n'
+}

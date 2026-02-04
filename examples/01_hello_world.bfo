@@ -1,0 +1,8 @@
+func main() {
+    print 'H'
+    print 'e'
+    print 'l'
+    print 'l'
+    print 'o'
+    print '\n'
+}

@@ -64,52 +64,101 @@ impl BFOGenerator {
         }
     }
 
+    fn materialize_to_cell(&mut self, name: &str, expr: Expr) {
+        match &expr {
+            Expr::Number(_) | Expr::CharLiteral(_) => {
+                self.indent();
+                self.emit(&format!("set {} ", name));
+                self.gen_expr_simple(expr);
+                self.emit_line("");
+            },
+            Expr::Variable(v) => {
+                self.indent();
+                self.emit_line(&format!("set {} 0", name));
+                self.indent();
+                self.emit_line(&format!("add {} {}", name, v));
+            },
+            Expr::ArrayAccess { array, index } => {
+                // If it's a physical array access, we treat it as a variable for the copy
+                if let Expr::Number(i) = index.as_ref() {
+                    if let Expr::Variable(array_name) = array.as_ref() {
+                        if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
+                            if *elem_type == Type::Cell {
+                                let cell_name = self.get_array_var_name(array_name, *i);
+                                self.indent();
+                                self.emit_line(&format!("set {} 0", name));
+                                self.indent();
+                                self.emit_line(&format!("add {} {}", name, cell_name));
+                                return;
+                            }
+                        }
+                    }
+                }
+                
+                // Otherwise fall back to gen_expr_simple (which will panic if it's not a literal)
+                self.indent();
+                self.emit(&format!("set {} ", name));
+                self.gen_expr_simple(expr);
+                self.emit_line("");
+            },
+            Expr::BinaryOp { left, op, right } => {
+                // Check for shorthands: A = A + B, A = B + A, A = A - B
+                let left_is_name = if let Expr::Variable(v) = left.as_ref() { v == name } else { false };
+                let right_is_name = if let Expr::Variable(v) = right.as_ref() { v == name } else { false };
+
+                if left_is_name && *op == Token::Plus {
+                    // A = A + right  =>  add A right
+                    self.indent();
+                    self.emit(&format!("add {} ", name));
+                    self.gen_expr_simple(*right.clone());
+                    self.emit_line("");
+                } else if right_is_name && *op == Token::Plus {
+                    // A = left + A  =>  add A left
+                    self.indent();
+                    self.emit(&format!("add {} ", name));
+                    self.gen_expr_simple(*left.clone());
+                    self.emit_line("");
+                } else if left_is_name && *op == Token::Minus {
+                    // A = A - right  =>  sub A right
+                    self.indent();
+                    self.emit(&format!("sub {} ", name));
+                    self.gen_expr_simple(*right.clone());
+                    self.emit_line("");
+                } else {
+                    // General case: clear and rebuild
+                    self.indent();
+                    self.emit_line(&format!("set {} 0", name));
+                    
+                    // Add left
+                    self.indent();
+                    self.emit(&format!("add {} ", name));
+                    self.gen_expr_simple(*left.clone());
+                    self.emit_line("");
+                    
+                    // Add/Sub right
+                    self.indent();
+                    let op_cmd = if *op == Token::Plus { "add" } else { "sub" };
+                    self.emit(&format!("{} {} ", op_cmd, name));
+                    self.gen_expr_simple(*right.clone());
+                    self.emit_line("");
+                }
+            },
+            _ => {
+                self.indent();
+                self.emit(&format!("set {} ", name));
+                self.gen_expr_simple(expr);
+                self.emit_line("");
+            }
+        }
+    }
+
     fn gen_stmt(&mut self, stmt: Stmt, is_top_level: bool) {
         match stmt {
             Stmt::VarDecl { var_type, name, value } => {
                 let folded = self.fold_expr(value, &self.variables.clone());
                 
                 match &var_type {
-                    Type::Cell => {
-                        // cell is physical
-                        match &folded {
-                            Expr::Number(_) | Expr::CharLiteral(_) => {
-                                self.indent();
-                                self.emit(&format!("set {} ", name));
-                                self.gen_expr_simple(folded);
-                                self.emit_line("");
-                            },
-                            Expr::Variable(v) => {
-                                self.indent();
-                                self.emit_line(&format!("set {} 0", name));
-                                self.indent();
-                                self.emit_line(&format!("add {} {}", name, v));
-                            },
-                            Expr::BinaryOp { left, op, right } => {
-                                self.indent();
-                                self.emit_line(&format!("set {} 0", name));
-                                
-                                // Add left
-                                self.indent();
-                                self.emit(&format!("add {} ", name));
-                                self.gen_expr_simple(*left.clone());
-                                self.emit_line("");
-                                
-                                // Add/Sub right
-                                self.indent();
-                                let op_cmd = if *op == Token::Plus { "add" } else { "sub" };
-                                self.emit(&format!("{} {} ", op_cmd, name));
-                                self.gen_expr_simple(*right.clone());
-                                self.emit_line("");
-                            },
-                            _ => {
-                                self.indent();
-                                self.emit(&format!("set {} ", name));
-                                self.gen_expr_simple(folded);
-                                self.emit_line("");
-                            }
-                        }
-                    },
+                    Type::Cell => self.materialize_to_cell(&name, folded),
                     Type::Array(inner) => {
                         if **inner == Type::Cell {
                             // cell[] is physical: contiguous named cells
@@ -147,11 +196,8 @@ impl BFOGenerator {
                     if let Some((_, _, elem_type, literals)) = self.arrays.get_mut(&name) {
                         if *elem_type == Type::Cell {
                             // physical cell[] update
-                            let cell_name = format!("{}_{}", name, i + 1);
-                            self.indent();
-                            self.emit(&format!("set {} ", cell_name));
-                            self.gen_expr_simple(folded_val);
-                            self.emit_line("");
+                            let cell_name = self.get_array_var_name(&name, i);
+                            self.materialize_to_cell(&cell_name, folded_val);
                         } else {
                             // virtual array update (silent)
                             if let Some(lits) = literals {
@@ -172,44 +218,7 @@ impl BFOGenerator {
                 if self.variables.contains_key(&name) {
                     self.variables.insert(name, folded);
                 } else {
-                    // Assume physical (cell)
-                    match &folded {
-                        Expr::Number(_) | Expr::CharLiteral(_) => {
-                            self.indent();
-                            self.emit(&format!("set {} ", name));
-                            self.gen_expr_simple(folded);
-                            self.emit_line("");
-                        },
-                        Expr::Variable(v) => {
-                            self.indent();
-                            self.emit_line(&format!("set {} 0", name));
-                            self.indent();
-                            self.emit_line(&format!("add {} {}", name, v));
-                        },
-                        Expr::BinaryOp { left, op, right } => {
-                            self.indent();
-                            self.emit_line(&format!("set {} 0", name));
-                            
-                            // Add left
-                            self.indent();
-                            self.emit(&format!("add {} ", name));
-                            self.gen_expr_simple(*left.clone());
-                            self.emit_line("");
-                            
-                            // Add/Sub right
-                            self.indent();
-                            let op_cmd = if *op == Token::Plus { "add" } else { "sub" };
-                            self.emit(&format!("{} {} ", op_cmd, name));
-                            self.gen_expr_simple(*right.clone());
-                            self.emit_line("");
-                        },
-                        _ => {
-                            self.indent();
-                            self.emit(&format!("set {} ", name));
-                            self.gen_expr_simple(folded);
-                            self.emit_line("");
-                        }
-                    }
+                    self.materialize_to_cell(&name, folded);
                 }
             },
             Stmt::FuncDecl { name, params, return_type: _, body } => {
@@ -236,7 +245,6 @@ impl BFOGenerator {
             Stmt::Putc(expr) => {
                 let folded = self.fold_expr(expr, &self.variables.clone());
                 
-                self.indent();
                 match folded {
                     Expr::Variable(name) => {
                         // If it's a virtual array, print sequentially
@@ -247,23 +255,43 @@ impl BFOGenerator {
                         } else { None };
 
                         if let Some((name, lits)) = array_data {
-                            for (i, lit) in lits.iter().enumerate() {
-                                if i > 0 { self.indent(); }
-                                self.emit(&format!("set {} ", name));
-                                self.gen_expr_simple(lit.clone());
-                                self.emit_line("");
+                            for (_i, lit) in lits.iter().enumerate() {
+                                self.materialize_to_cell(&name, lit.clone());
                                 self.indent();
                                 self.emit_line(&format!("print {}", name));
                             }
                         } else {
                             // Single physical variable or unknown
+                            self.indent();
                             self.emit_line(&format!("print {}", name));
                         }
                     },
+                    Expr::ArrayAccess { array, index } => {
+                        // If it's a physical cell array access, we can print the cell name directly
+                        if let Expr::Number(i) = index.as_ref() {
+                            if let Expr::Variable(array_name) = array.as_ref() {
+                                if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
+                                    if *elem_type == Type::Cell {
+                                        let cell_name = self.get_array_var_name(array_name, *i);
+                                        self.indent();
+                                        self.emit_line(&format!("print {}", cell_name));
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Otherwise fall back to materialization
+                        self.materialize_to_cell("tmp", Expr::ArrayAccess { array, index });
+                        self.indent();
+                        self.emit_line("print tmp");
+                    },
                     Expr::Number(n) => {
+                        self.indent();
                         self.emit_line(&format!("print {}", n));
                     },
                     Expr::CharLiteral(c) => {
+                        self.indent();
                         self.emit_line(&format!("print '{}'", c.escape_default()));
                     },
                     Expr::StringLiteral(s) => {
@@ -281,11 +309,11 @@ impl BFOGenerator {
                         }
                     },
                     _ => {
-                        // If it wasn't a literal/variable after folding, try one last resolution
-                        // This handles cases like `putc(a + b)` where a and b were globals
-                        self.emit("print ");
-                        self.gen_expr_simple(folded);
-                        self.emit_line("");
+                        // Complex expression materialization
+                        // Use local 'tmp' cell for BFO printing
+                        self.materialize_to_cell("tmp", folded);
+                        self.indent();
+                        self.emit_line("print tmp");
                     }
                 }
             },
