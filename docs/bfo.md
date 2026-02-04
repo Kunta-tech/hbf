@@ -61,7 +61,8 @@ while fff_i {
 Define a function:
 ```
 func add_cells(a, b) {
-    set c a
+    set c 0
+    add c a
     add c b
     print c
 }
@@ -88,7 +89,8 @@ add target src  ; Copy src value into target
 Functions that can be analyzed at compile-time are preserved in BFO:
 ```
 func add_cells(a, b) {
-    set c a
+    set c 0
+    add c a
     add c b
     print c
 }
@@ -152,7 +154,8 @@ All variables store integer values **mod 256** (0-255) or ASCII character values
 
 ```
 func add_cells(a, b) {
-    set c a
+    set c 0
+    add c a
     add c b
     print c
 }

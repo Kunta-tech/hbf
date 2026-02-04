@@ -62,9 +62,9 @@ Arrays can be initialized using curly braces:
 cell[] arr = {65, 66, 67};
 ```
 
-## Internal Variables
+## I/O Optimization: Direct Literal Printing
 
-The compiler uses a special `tmp` variable to materialize virtual literals for I/O:
+HBF avoids wasting Brainfuck tape space for transient I/O. When printing literals or virtual variables, the compiler skips variable allocation entirely.
 
 **HBF:**
 ```c
@@ -73,11 +73,10 @@ putc('A');
 
 **BFO:**
 ```
-set tmp 'A'
-print tmp
+print 'A'      ; No cell used
 ```
 
-This prevents virtual variables from needing a dedicated slot on the Brainfuck tape when they are only used for transient operations.
+If a value is complex (e.g., a runtime expression assigned to a local `int`), the compiler may use an internal materialization strategy to ensure efficient output.
 
 ## Operators
 
@@ -137,9 +136,9 @@ forn(cell n = 10) {
 
 **Syntax:**
 - `forn(cell variable = value) { ... }`
-- Variable must be `cell` type
-- Value can be a constant or runtime variable
-- Loop executes while variable is non-zero, decrementing each iteration
+- **Variable**: Must be `cell` type (physical counter).
+- **Value**: Can be a literal (`10`), a virtual variable (`int a`), or another physical `cell`.
+- **Initialization**: If `value` is a variable, the compiler automatically uses the **Add-to-Zero** pattern (`set i 0; add i src`) to copy the value.
 
 **Compiled BFO:**
 ```
@@ -177,13 +176,11 @@ Currently only `void` functions are supported.
 
 ## Built-in Functions
 
-### `putc(cell c)`
-Outputs a single character to stdout. **Only accepts `cell` type.**
+### `putc(expr)`
+Outputs a single character to stdout. 
 
-```c
-cell c = 'H';
-putc(c);
-```
+- **Physical**: If passed a `cell`, it emits `print cell_name`.
+- **Virtual/Literal**: If passed an `int`, `char`, or literal, it emits `print literal` (Direct Printing).
 
 ## Array Operations
 

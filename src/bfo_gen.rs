@@ -290,8 +290,10 @@ impl BFOGenerator {
                 }
             },
             Stmt::For { init, condition, update, body } => {
+                // Try to fold the condition to help optimization
+                let folded_condition = self.fold_expr(condition.clone(), &self.variables.clone());
                 // Check if we can unroll the loop (constant iteration count)
-                let can_optimize = self.can_optimize_for_loop(&init, &condition, &update);
+                let can_optimize = self.can_optimize_for_loop(&init, &folded_condition, &update);
                 
                 if let Some((var_name, limit)) = can_optimize {
                     // Check if this loop is iterating over a streaming array (non-cell)
@@ -315,16 +317,16 @@ impl BFOGenerator {
                     // while condition
                     self.indent();
                     self.emit("while ");
-                    match &condition {
+                    match &folded_condition {
                         Expr::Variable(name) => self.emit(name),
                         Expr::BinaryOp { left, op: _, right: _ } => {
                             if let Expr::Variable(name) = left.as_ref() {
                                 self.emit(name);
                             } else {
-                                panic!("Complex comparison not supported");
+                                panic!("Complex comparison not supported: {:?}", folded_condition);
                             }
                         },
-                        _ => panic!("Unsupported for loop condition"),
+                        _ => panic!("Unsupported for loop condition: {:?}", folded_condition),
                     }
                     self.emit_line(" {");
                     
@@ -544,8 +546,8 @@ impl BFOGenerator {
                                     }
                                 }
                             }
-                            // Otherwise, we can't 'set' from a cell array directly in BFO
-                            panic!("Cannot 'set' from cell array element directly in BFO: {}_{}. BFO only supports set <var> <literal>.", name, i + 1);
+                            // If it's a physical cell array, we emit the cell name (e.g. arr_1)
+                            self.emit(&self.get_array_var_name(name, *i));
                         },
                         Expr::StringLiteral(s) => {
                             if let Some(ch) = s.chars().nth(*i as usize) {
@@ -677,6 +679,59 @@ impl BFOGenerator {
                     left: Box::new(left_folded),
                     op,
                     right: Box::new(right_folded),
+                }
+            },
+            Expr::ArrayAccess { array, index } => {
+                let array_folded = self.fold_expr(*array, var_values);
+                let index_folded = self.fold_expr(*index, var_values);
+
+                if let Expr::Number(i) = &index_folded {
+                    match &array_folded {
+                        Expr::StringLiteral(s) => {
+                            if let Some(ch) = s.chars().nth(*i as usize) {
+                                return Expr::CharLiteral(ch);
+                            }
+                        },
+                        Expr::ArrayLiteral(elements) => {
+                            if let Some(el) = elements.get(*i as usize) {
+                                return el.clone();
+                            }
+                        },
+                        Expr::Variable(name) => {
+                            if let Some((_, _, elem_type, Some(literals))) = self.arrays.get(name) {
+                                if *elem_type != Type::Cell {
+                                    if let Some(lit) = literals.get(*i as usize) {
+                                        return lit.clone();
+                                    }
+                                }
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+
+                Expr::ArrayAccess {
+                    array: Box::new(array_folded),
+                    index: Box::new(index_folded),
+                }
+            },
+            Expr::MemberAccess { object, member } => {
+                let object_folded = self.fold_expr(*object, var_values);
+                if member == "length" {
+                    match &object_folded {
+                        Expr::StringLiteral(s) => return Expr::Number(s.len() as i32),
+                        Expr::ArrayLiteral(elements) => return Expr::Number(elements.len() as i32),
+                        Expr::Variable(name) => {
+                            if let Some((_, len, _, _)) = self.arrays.get(name) {
+                                return Expr::Number(*len as i32);
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+                Expr::MemberAccess {
+                    object: Box::new(object_folded),
+                    member,
                 }
             },
             _ => expr, // Other expressions (CharLiteral, StringLiteral, Number) unchanged
@@ -820,6 +875,12 @@ impl BFOGenerator {
             },
             Stmt::While { condition, body } => Stmt::While {
                 condition: self.substitute_expr_with_expr(condition, var_name, replacement.clone()),
+                body: body.into_iter().map(|s| self.substitute_stmt_with_expr(s, var_name, replacement.clone())).collect(),
+            },
+            Stmt::For { init, condition, update, body } => Stmt::For {
+                init: Box::new(self.substitute_stmt_with_expr(*init, var_name, replacement.clone())),
+                condition: self.substitute_expr_with_expr(condition, var_name, replacement.clone()),
+                update: Box::new(self.substitute_stmt_with_expr(*update, var_name, replacement.clone())),
                 body: body.into_iter().map(|s| self.substitute_stmt_with_expr(s, var_name, replacement.clone())).collect(),
             },
             Stmt::ExprStmt(expr) => Stmt::ExprStmt(self.substitute_expr_with_expr(expr, var_name, replacement)),

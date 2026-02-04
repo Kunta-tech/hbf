@@ -262,13 +262,44 @@ repeat_char(5, 'H');  // Prints 'H' 5 times
 **BFO:**
 ```
 func repeat_char(count, c) {
-    set i count
+    set i 0
+    add i count
     while i {
         print c
         sub i 1
     }
 }
 ```
+
+## 4. Property & Access Folding
+
+### Overview
+
+Beyond basic arithmetic, the HBF compiler can resolve array indexing (`arr[i]`) and property access (`arr.length`) at compile-time for all virtual types.
+
+### Virtual Array Indexing
+
+When a virtual array (like a string or `int[]`) is accessed with a constant index, the compiler retrieves the literal value directly from its metadata storage.
+
+**HBF:**
+```c
+char[] s = "Hello";
+cell c = s[0];
+putc(c);
+```
+
+**BFO:**
+```
+print 'H'      ; s[0] resolved to 'H' at compile-time
+```
+
+### Property Folding
+
+The `.length` property of any array is treated as a compile-time constant, allowing for efficient loop unrolling and literal substitution.
+
+**Benefits:**
+- ✅ **Zero Runtime Access**: No need to store length on the tape or perform runtime lookups.
+- ✅ **Predictable Unrolling**: Enables the compiler to determine loop boundaries without runtime interaction.
 
 ## Implementation
 
