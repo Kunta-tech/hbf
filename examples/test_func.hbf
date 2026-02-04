@@ -3,4 +3,4 @@ void test_func(cell a, cell b) {
     putc(c);
 }
 
-test_func(5, 10);
+test_func('A', 10);

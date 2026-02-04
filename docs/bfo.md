@@ -207,13 +207,11 @@ print c
 - ✅ Reduces memory usage
 - ✅ Simplifies generated Brainfuck code
 
-### Countdown Loop Optimization
+### Loop Unrolling
 
-**Pattern:** `for (int i = 0; i < n; i++)`
+**Pattern:** `for (int i = 0; i < CONSTANT; i++)`
 
-**Problem:** BFO `while` only checks if a variable is non-zero, not comparisons like `i < n`.
-
-**Solution:** Transform to countdown pattern:
+**Behavior:** Compiler **unrolls** the loop, repeating the body statements inline.
 
 **HBF:**
 ```c
@@ -222,38 +220,59 @@ for (int i = 0; i < 5; i++) {
 }
 ```
 
-**Naive BFO (doesn't work correctly):**
+**Optimized BFO (unrolled):**
 ```
-set i 0
-while i {      ; Just checks i != 0 (wrong!)
-    print 'A'
-    add i 1
+print 'A'
+print 'A'
+print 'A'
+print 'A'
+print 'A'
+```
+
+**How it works:**
+1. Detect constant iteration count at compile time
+2. Repeat loop body N times inline
+3. Eliminate loop variable and overhead
+
+**Benefits:**
+- ✅ Zero loop overhead
+- ✅ Simpler BFO output
+- ✅ Faster execution
+
+### Native Countdown Loops (`forn`)
+
+**Pattern:** `forn(cell n = value)`
+
+**Behavior:** Generates native BFO `while` loop with countdown pattern.
+
+**HBF:**
+```c
+forn(cell n = 10) {
+    putc('B');
 }
 ```
 
-**Optimized BFO (countdown pattern):**
+**BFO (native countdown loop):**
 ```
-set i 0
-sub i 5        ; i = -5
-while i {      ; Loop while i != 0
-    print 'A'
-    add i 1    ; Count: -5, -4, -3, -2, -1, 0 (stops at 0)
+set n 10
+while n {
+    print 'B'
+    sub n 1
 }
 ```
 
 **How it works:**
-1. Initialize counter to `-n` instead of `0`
-2. Loop runs while counter ≠ 0
-3. Increment by 1 each iteration
+1. Initialize counter to iteration count
+2. Loop while counter ≠ 0
+3. Decrement by 1 each iteration
 4. Loop terminates when counter reaches 0
 
 **Benefits:**
-- ✅ No comparison operations needed
+- ✅ Works with runtime variables
 - ✅ Maps perfectly to Brainfuck's `[...]` loop
-- ✅ Automatically applied when pattern is detected
+- ✅ No comparison operations needed
 
-**Pattern Requirements:**
-- Init: `int i = 0`
-- Condition: `i < constant`
-- Update: `i++`
+**Use cases:**
+- Use `for` when iteration count is compile-time constant
+- Use `forn` when iteration count is runtime variable
 

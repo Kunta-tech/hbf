@@ -7,6 +7,7 @@ pub enum Token {
     Cell,
     String,
     For,
+    Forn,
     While,
     Func,
     

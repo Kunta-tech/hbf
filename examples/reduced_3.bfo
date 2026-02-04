@@ -1,0 +1,10 @@
+func test_for() {
+    print 'A'
+    print 'A'
+    print 'A'
+    print 'A'
+    print 'A'
+    print '\n'
+}
+func main() {
+}

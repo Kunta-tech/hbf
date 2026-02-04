@@ -3,7 +3,7 @@ void add_cells(cell a, cell b) {
     putc(c);
 }   
 void fff(int n, cell c) {
-    for (int i = 0; i < n; i++) {
+    forn (cell i = n) {
         putc(c);
     }
 }

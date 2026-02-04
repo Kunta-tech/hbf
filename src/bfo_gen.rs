@@ -157,36 +157,18 @@ impl BFOGenerator {
                 self.emit_line("");
             },
             Stmt::For { init, condition, update, body } => {
-                // Optimization: Detect for (int i = 0; i < n; i++) pattern
-                // Transform to: i = 0; sub i n; while i { body; add i 1 }
-                // This eliminates the need for comparison operations
-                
+                // Check if we can unroll the loop (constant iteration count)
                 let can_optimize = self.can_optimize_for_loop(&init, &condition, &update);
                 
-                if let Some((var_name, limit)) = can_optimize {
-                    // Optimized countdown pattern
-                    self.indent();
-                    self.emit_line(&format!("set {} 0", var_name));
-                    self.indent();
-                    self.emit_line(&format!("sub {} {}", var_name, limit));
-                    
-                    self.indent();
-                    self.emit_line(&format!("while {} {{", var_name));
-                    
-                    self.indent_level += 1;
-                    for s in body {
-                        self.gen_stmt(s, false);
+                if let Some((_, limit)) = can_optimize {
+                    // Loop unrolling: repeat the body N times
+                    for _ in 0..limit {
+                        for s in &body {
+                            self.gen_stmt(s.clone(), false);
+                        }
                     }
-                    
-                    // Increment (counting toward 0)
-                    self.indent();
-                    self.emit_line(&format!("add {} 1", var_name));
-                    self.indent_level -= 1;
-                    
-                    self.indent();
-                    self.emit_line("}");
                 } else {
-                    // Fallback: Standard for loop conversion
+                    // Fallback: Standard for loop conversion to while
                     // init
                     self.gen_stmt(*init, false);
                     
@@ -218,6 +200,29 @@ impl BFOGenerator {
                     self.indent();
                     self.emit_line("}");
                 }
+            },
+            Stmt::Forn { var_type: _, name, count, body } => {
+                // Generate native countdown loop: set n value; while n { body; sub n 1 }
+                self.indent();
+                self.emit(&format!("set {} ", name));
+                self.gen_expr_simple(count);
+                self.emit_line("");
+                
+                self.indent();
+                self.emit_line(&format!("while {} {{", name));
+                
+                self.indent_level += 1;
+                for s in body {
+                    self.gen_stmt(s, false);
+                }
+                
+                // Decrement counter
+                self.indent();
+                self.emit_line(&format!("sub {} 1", name));
+                self.indent_level -= 1;
+                
+                self.indent();
+                self.emit_line("}");
             },
             Stmt::While { condition, body } => {
                 self.indent();

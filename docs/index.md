@@ -8,7 +8,7 @@ Welcome to the documentation for the Higher-Level Brainfuck (HBF) Compiler.
 - [BFO Format](bfo.md): Understand the intermediate representation.
 - [Compilation Pipeline](compilation.md): How HBF compiles to Brainfuck.
 - [Optimizations](optimizations.md): Compiler optimizations explained.
-- [Architecture & Internals](architecture.md): Understand how the compiler works under the hood.
+- [Architecture & Internals](compiler_internals.md): Understand how the compiler works under the hood.
 
 ## Quick Start
 1. **Write code** in a `.hbf` file:

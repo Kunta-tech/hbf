@@ -3,4 +3,4 @@ func test_func(a, b) {
     add c b
     print c
 }
-test_func(5, 10)
+test_func('A', 10)

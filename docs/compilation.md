@@ -99,7 +99,8 @@ The backend compiler:
 ### BFO Level
 - **Constant folding**: Evaluate constant expressions at compile time
 - **Dead variable elimination**: Remove unused `int` variables
-- **Countdown loop optimization**: `for (i=0; i<n; i++)` → countdown pattern
+- **Loop unrolling**: `for (i=0; i<CONSTANT; i++)` → repeated statements
+- **Native countdown loops**: `forn(cell n = value)` → BFO `while` with decrement
 - Constant propagation
 - Common subexpression elimination
 

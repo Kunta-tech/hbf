@@ -1,30 +1,30 @@
 ; function print_string breaks down due to not using string in parameter
 ; such functions are not predictable and be decoded in this object file
-set g1 'H'
-print g1
+set g0 'H'
+print g0
 set g1 'e'
 print g1
-set g1 'l'
-print g1
-set g1 'l'
-print g1
-set g1 'o'
-print g1
-set g1 ','
-print g1
-set g1 ' '
-print g1
-set g1 'W'
-print g1
-set g1 'o'
-print g1
-set g1 'r'
-print g1
-set g1 'l'
-print g1
-set g1 'd'
-print g1
-set g1 '!'
-print g1
-set g1 '\n'
-print g1
+set g2 'l'
+print g2
+set g3 'l'
+print g3
+set g4 'o'
+print g4
+set g5 ','
+print g5
+set g6 ' '
+print g6
+set g7 'W'
+print g7
+set g8 'o'
+print g8
+set g9 'r'
+print g9
+set g10 'l'
+print g10
+set g11 'd'
+print g11
+set g12 '!'
+print g12
+set g13 '\n'
+print g13

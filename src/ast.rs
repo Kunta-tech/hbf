@@ -58,6 +58,12 @@ pub enum Stmt {
         update: Box<Stmt>,
         body: Vec<Stmt>,
     },
+    Forn {
+        var_type: Type,
+        name: String,
+        count: Expr,
+        body: Vec<Stmt>,
+    },
     While {
         condition: Expr,
         body: Vec<Stmt>,

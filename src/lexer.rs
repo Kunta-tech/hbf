@@ -106,6 +106,7 @@ impl<'a> Lexer<'a> {
             "cell" => Token::Cell,
             "string" => Token::String,
             "for" => Token::For,
+            "forn" => Token::Forn,
             "while" => Token::While,
             "func" => Token::Func,
             "putc" => Token::Putc,

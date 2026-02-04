@@ -82,58 +82,44 @@ print result
 
 ---
 
-## 2. Countdown Loop Optimization
+## 2. Loop Unrolling Optimization
 
-## Overview
+### Overview
 
-The HBF compiler automatically optimizes `for (int i = 0; i < n; i++)` loops into a countdown pattern that eliminates comparison operations.
+The HBF compiler automatically **unrolls** `for` loops with constant iteration counts, eliminating loop overhead entirely by repeating the loop body inline.
 
-## The Problem
+### The Problem
 
-BFO's `while` instruction only checks if a variable is **non-zero**, not complex comparisons like `i < n`. This creates a challenge for standard counting loops.
+Loops have overhead in Brainfuck - they require loop counter management, comparisons, and branching. For small, constant iteration counts, this overhead is wasteful.
 
-## The Solution: Countdown Pattern
+### The Solution: Loop Unrolling
 
-### Transformation
-
-**Before (HBF):**
+**HBF:**
 ```c
 for (int i = 0; i < 5; i++) {
     putc('A');
 }
 ```
 
-**After (Optimized BFO):**
+**Optimized BFO (unrolled):**
 ```
-set i 0
-sub i 5        ; i = -5
-while i {      ; Loop while i != 0
-    print 'A'
-    add i 1    ; -5 → -4 → -3 → -2 → -1 → 0 (stops)
-}
+print 'A'
+print 'A'
+print 'A'
+print 'A'
+print 'A'
 ```
 
 ### How It Works
 
-1. **Initialize to negative**: `i = 0 - n = -n`
-2. **Loop condition**: `while i` checks `i != 0`
-3. **Increment**: `i++` counts toward zero
-4. **Termination**: Loop stops when `i` reaches `0`
+1. **Detect constant bounds**: Compiler identifies `for (int i = 0; i < CONSTANT; i++)`
+2. **Evaluate iteration count**: Calculates how many times the loop runs
+3. **Repeat body**: Generates the loop body statements N times inline
+4. **Eliminate loop variable**: No loop counter needed in BFO
 
-### Why This Works
+### Pattern Detection
 
-| Iteration | i value | i != 0? | Action |
-|-----------|---------|---------|--------|
-| Start     | -5      | ✓       | Run loop |
-| 1         | -4      | ✓       | Run loop |
-| 2         | -3      | ✓       | Run loop |
-| 3         | -2      | ✓       | Run loop |
-| 4         | -1      | ✓       | Run loop |
-| 5         | 0       | ✗       | **Exit** |
-
-## Pattern Detection
-
-The compiler automatically applies this optimization when it detects:
+The compiler automatically unrolls when it detects:
 
 ```c
 for (int i = 0; i < CONSTANT; i++)
@@ -141,57 +127,149 @@ for (int i = 0; i < CONSTANT; i++)
 
 **Requirements:**
 - ✅ Init: `int i = 0` (must start at zero)
-- ✅ Condition: `i < n` (less-than with constant)
+- ✅ Condition: `i < CONSTANT` (less-than with compile-time constant)
 - ✅ Update: `i++` (increment by one)
 
-**Not optimized:**
+**Not unrolled:**
+- ❌ `for (int i = 0; i < n; i++)` - `n` is runtime variable
 - ❌ `for (int i = 1; i < 10; i++)` - doesn't start at 0
-- ❌ `for (int i = 0; i < n; i += 2)` - increment not 1
 - ❌ `for (int i = 0; i <= 5; i++)` - uses `<=` instead of `<`
 
-## Benefits
+### Benefits
 
-### 1. No Comparison Operations
-Eliminates the need for complex comparison logic in BFO/BF.
+| Benefit | Description |
+|---------|-------------|
+| **Zero overhead** | No loop counter, no comparisons, no branching |
+| **Smaller code** | For small iteration counts, unrolled code is simpler |
+| **Faster execution** | Direct execution without loop management |
 
-### 2. Brainfuck-Native
-Maps perfectly to BF's `[...]` loop which runs while cell ≠ 0.
+### Example: Before vs After
 
-### 3. Efficient
-Countdown is as fast as count-up but requires no comparison overhead.
-
-## Example: Before vs After
-
-### Without Optimization (Broken)
+**Before (with loop):**
 ```
 set i 0
-while i {      ; BUG: i=0 initially, loop never runs!
+sub i 5
+while i {
     print 'A'
     add i 1
 }
 ```
+**5 instructions + loop overhead**
 
-### With Optimization (Correct)
+**After (unrolled):**
 ```
-set i 0
-sub i 5        ; i = -5
-while i {      ; Works: i != 0 for 5 iterations
-    print 'A'
-    add i 1
+print 'A'
+print 'A'
+print 'A'
+print 'A'
+print 'A'
+```
+**5 instructions, zero overhead**
+
+---
+
+## 3. Native Countdown Loops (`forn`)
+
+### Overview
+
+For runtime-variable iteration counts, HBF provides the `forn` construct which generates native BFO countdown loops.
+
+### The Problem
+
+When the iteration count isn't known at compile time, loop unrolling isn't possible. We need a native loop construct.
+
+### The Solution: `forn` Construct
+
+**HBF:**
+```c
+forn(cell n = 10) {
+    putc('B');
+}
+```
+
+**BFO (native countdown loop):**
+```
+set n 10
+while n {
+    print 'B'
+    sub n 1
+}
+```
+
+### How It Works
+
+1. **Initialize counter**: Set `n` to the iteration count
+2. **Loop while non-zero**: BFO `while n` checks `n != 0`
+3. **Decrement**: Each iteration subtracts 1 from `n`
+4. **Terminate at zero**: Loop stops when `n` reaches 0
+
+### Why Countdown?
+
+BFO's `while` instruction only checks if a variable is **non-zero**, not complex comparisons like `i < n`. Counting down to zero maps perfectly to this constraint.
+
+| Iteration | n value | n != 0? | Action |
+|-----------|---------|---------|--------|
+| Start     | 10      | ✓       | Run loop |
+| 1         | 9       | ✓       | Run loop |
+| ...       | ...     | ✓       | Run loop |
+| 9         | 1       | ✓       | Run loop |
+| 10        | 0       | ✗       | **Exit** |
+
+### Syntax
+
+```c
+forn(cell variable = value) {
+    // body
+}
+```
+
+**Requirements:**
+- Variable must be `cell` type
+- Value can be constant or runtime variable
+- Loop executes `value` times
+
+### Benefits
+
+- ✅ **Runtime flexibility**: Works with variable iteration counts
+- ✅ **Brainfuck-native**: Maps perfectly to BF's `[...]` loop
+- ✅ **No comparison overhead**: Uses simple zero-check
+
+### Use Cases
+
+**Use `for` when:**
+- Iteration count is a compile-time constant
+- You want zero loop overhead
+
+**Use `forn` when:**
+- Iteration count is a runtime variable
+- You need a native loop in the BFO output
+
+### Example: Runtime Variable
+
+```c
+void repeat_char(int count, cell c) {
+    forn(cell i = count) {
+        putc(c);
+    }
+}
+
+repeat_char(5, 'H');  // Prints 'H' 5 times
+```
+
+**BFO:**
+```
+func repeat_char(count, c) {
+    set i count
+    while i {
+        print c
+        sub i 1
+    }
 }
 ```
 
 ## Implementation
 
-The optimization is implemented in [`src/bfo_gen.rs`](file:///s:/vs%20code/projects/hbf/src/bfo_gen.rs):
+Both optimizations are implemented in [`src/bfo_gen.rs`](file:///s:/vs%20code/projects/hbf/src/bfo_gen.rs):
 
-```rust
-fn can_optimize_for_loop(&self, init: &Stmt, condition: &Expr, update: &Stmt) 
-    -> Option<(String, i32)>
-```
-
-This function pattern-matches the for loop structure and returns the variable name and loop count if the pattern is detected.
-
-## Credit
-
-This optimization was contributed by the user and demonstrates the power of thinking in terms of the target platform's constraints (Brainfuck's zero-check loops).
+- **Loop unrolling**: Pattern-matches `for` loops and repeats body statements
+- **`forn` loops**: Generates `set` + `while` + `sub` pattern

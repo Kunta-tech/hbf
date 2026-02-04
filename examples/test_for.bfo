@@ -1,8 +1,20 @@
 func test_for() {
-    set i 0
-    sub i 5
-    while i {
-        print 'A'
-        add i 1
+    print 'A'
+    print 'A'
+    print 'A'
+    print 'A'
+    print 'A'
+    print '\n'
+}
+func test_forn() {
+    set n 10
+    while n {
+        print 'B'
+        sub n 1
     }
+    print '\n'
+}
+func main() {
+    test_for()
+    test_forn()
 }

@@ -1,0 +1,7 @@
+func main() {
+    set n 10
+    while n {
+        print 'B'
+        sub n 1
+    }
+}

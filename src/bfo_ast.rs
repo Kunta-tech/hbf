@@ -1,0 +1,51 @@
+// BFO Abstract Syntax Tree
+// Represents parsed BFO intermediate format
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BFOProgram {
+    pub items: Vec<BFOItem>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BFOItem {
+    // Global variable: set x 5
+    GlobalSet { name: String, value: BFOValue },
+    
+    // Function definition
+    Function {
+        name: String,
+        params: Vec<String>,
+        body: Vec<BFOStmt>,
+    },
+    
+    // Top-level function call
+    FunctionCall { name: String, args: Vec<BFOValue> },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BFOStmt {
+    // set x value
+    Set { name: String, value: BFOValue },
+    
+    // add x value
+    Add { name: String, value: BFOValue },
+    
+    // sub x value
+    Sub { name: String, value: BFOValue },
+    
+    // print x
+    Print { value: BFOValue },
+    
+    // while x { ... }
+    While { condition: String, body: Vec<BFOStmt> },
+    
+    // function_name(args)
+    Call { name: String, args: Vec<BFOValue> },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BFOValue {
+    Number(i32),
+    Char(char),
+    Variable(String),
+}

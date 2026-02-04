@@ -66,14 +66,58 @@ cell newline = '\n'; // Escape sequences supported
 
 ## Control Flow
 
-### For Loops
+### For Loops (Loop Unrolling)
+
+Standard for loops with **constant bounds** are **unrolled** at compile time:
+
 ```c
-for (int i = 0; i < n; i++) {
-    // body
+for (int i = 0; i < 5; i++) {
+    putc('A');
+}
+// Compiler generates 5 sequential putc('A') statements
+```
+
+**Requirements for unrolling:**
+- Constant iteration count known at compile time
+- Standard pattern: `for (int i = 0; i < CONSTANT; i++)`
+
+**Compiled BFO:**
+```
+print 'A'
+print 'A'
+print 'A'
+print 'A'
+print 'A'
+```
+
+### forn Loops (Native Countdown)
+
+For runtime-variable iteration counts or when you need a native loop, use `forn`:
+
+```c
+forn(cell n = 10) {
+    putc('B');
+}
+// Generates a while loop that counts down from n to 0
+```
+
+**Syntax:**
+- `forn(cell variable = value) { ... }`
+- Variable must be `cell` type
+- Value can be a constant or runtime variable
+- Loop executes while variable is non-zero, decrementing each iteration
+
+**Compiled BFO:**
+```
+set n 10
+while n {
+    print 'B'
+    sub n 1
 }
 ```
 
 ### While Loops
+
 ```c
 while (condition) {
     // body

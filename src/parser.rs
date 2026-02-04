@@ -69,6 +69,7 @@ impl<'a> Parser<'a> {
                 self.eat(Token::Semicolon);
                 Stmt::ExprStmt(expr)
             },
+            Token::Putc => self.parse_putc(),
             _ => panic!("Unexpected token at top level: {:?}", self.current_token),
         }
     }
@@ -148,31 +149,43 @@ impl<'a> Parser<'a> {
         match &self.current_token {
             Token::Int | Token::Cell | Token::String => self.parse_var_decl(),
             Token::For => self.parse_for(),
+            Token::Forn => self.parse_forn(),
             Token::While => self.parse_while(),
             Token::Putc => self.parse_putc(),
             Token::Identifier(_) => {
-                // Could be assignment or function call
+                // Peek at next token using a temporary variable if possible
+                // Since our parser doesn't have peek, we'll use a match on the current state
                 let name = if let Token::Identifier(n) = &self.current_token {
                     n.clone()
                 } else {
                     unreachable!()
                 };
-                self.advance();
                 
+                // If the statement starts with identifier, it must be either an assignment or a function call
+                // Let's use parse_expr() for everything and then check if it was an assignment
+                // Actually, our AST has Assign as a Statement, not an Expression.
+                // So let's just peek ahead properly.
+                
+                // Save current state for simpler handling
+                let expr = self.parse_expr();
                 if self.current_token == Token::Equals {
-                    // Assignment
-                    self.advance();
-                    let value = self.parse_expr();
-                    self.eat(Token::Semicolon);
-                    Stmt::Assign { name, value }
-                } else if self.current_token == Token::LParen {
-                    // Function call
-                    self.current_token = Token::Identifier(name.clone()); // Put it back
-                    let expr = self.parse_expr();
+                    // It was actually part of an assignment (variable = ...)
+                    // But wait, parse_expr handles variables but not as L-values for =
+                    // This is tricky. Let's just fix the advance bug.
+                    
+                    // The correct way: check if Expr is Variable
+                    if let Expr::Variable(var_name) = expr {
+                        self.eat(Token::Equals);
+                        let value = self.parse_expr();
+                        self.eat(Token::Semicolon);
+                        Stmt::Assign { name: var_name, value }
+                    } else {
+                        panic!("Invalid assignment target");
+                    }
+                } else {
+                    // Was a function call or just an expression statement
                     self.eat(Token::Semicolon);
                     Stmt::ExprStmt(expr)
-                } else {
-                    panic!("Unexpected token after identifier: {:?}", self.current_token);
                 }
             },
             _ => panic!("Unexpected token at start of statement: {:?}", self.current_token),
@@ -214,6 +227,32 @@ impl<'a> Parser<'a> {
         self.eat(Token::RBrace);
         
         Stmt::For { init, condition, update, body }
+    }
+
+    fn parse_forn(&mut self) -> Stmt {
+        self.eat(Token::Forn);
+        self.eat(Token::LParen);
+        
+        let var_type = self.parse_type();
+        let name = if let Token::Identifier(n) = &self.current_token {
+            n.clone()
+        } else {
+            panic!("Expected variable name in forn loop");
+        };
+        self.advance();
+        
+        self.eat(Token::Equals);
+        let count = self.parse_expr();
+        self.eat(Token::RParen);
+        
+        self.eat(Token::LBrace);
+        let mut body = Vec::new();
+        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+            body.push(self.parse_statement());
+        }
+        self.eat(Token::RBrace);
+        
+        Stmt::Forn { var_type, name, count, body }
     }
 
     fn parse_var_decl_no_semi(&mut self) -> Stmt {
