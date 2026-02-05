@@ -2,144 +2,82 @@
 
 ## Overview
 
-HBF uses a three-stage compilation pipeline:
+HBF uses a multi-stage compilation pipeline:
 
 ```
-HBF Source (.hbf) → BFO Object (.bfo) → Brainfuck (.bf)
+HBF Source (.hbf) → BFO Object (.bfo) → [Brainfuck (.bf)]
 ```
+
+> [!NOTE]
+> Brainfuck generation (.bf) is currently the final backend stage and is a work-in-progress.
 
 ## Stage 1: HBF → BFO (Frontend)
 
-The frontend compiler:
-1. **Lexical Analysis**: Tokenizes source code
-2. **Parsing**: Builds Abstract Syntax Tree (AST)
-3. **Semantic Analysis**: Type checking, scope resolution
-4. **Code Generation**: Emits BFO instructions
+The frontend compiler (`hbf compile`) performs:
+1. **Lexical Analysis**: Tokenizes source code into `lexer::Token`s.
+2. **Parsing**: Constructs an Abstract Syntax Tree (AST).
+3. **Semantic Analysis**: Type checking and scope resolution.
+4. **Optimization**: Constant folding and virtual variable elimination.
+5. **Code Generation**: Emits assembly-like BFO instructions.
+
+### Variable Materialization
+
+HBF makes a strict distinction between **Virtual** (`int`, `char`) and **Physical** (`cell`) types.
+- **Virtual variables** are "Always-Virtual": they exist only in the compiler's symbol table and are folded into BFO instructions. They occupy ZERO tape space.
+- **Physical variables** (`cell`) are materialized into BFO `set` and `add` instructions.
 
 ### Function Handling
 
-#### Predictable Functions
-Functions with compile-time analyzable behavior are preserved:
-```c
-void add_cells(cell a, cell b) {
-    cell c = a + b;
-    putc(c);
-}
-```
-↓
-```
-func add_cells(a, b) {
-    set c a
-    add c b
-    print c
-}
-```
+#### Deterministic Inlining
+Functions taking strictly **virtual** parameters (`int`, `char`, `int[]`, `char[]`) are **automatically inlined**. This allows the compiler to resolve runtime arithmetic to literals at each specific call site.
 
-#### Unpredictable Functions
-Functions with runtime-dependent behavior are **inlined**:
-```c
-void print_string(string s) {
-    for (int i = 0; i < s.length; i++) {
-        cell c = s[i];
-        putc(c);
-    }
-}
-print_string("Hi");
-```
-↓
-```
-; Inlined due to string parameter
-set g1 'H'
-print g1
-set g1 'i'
-print g1
-```
-
-### Variable Scoping
-- Local variables → Stack allocation in BFO
-- Loop counters → May become global if needed across function boundaries
-- Global variables → Declared at BFO file scope
-
-## Stage 2: BFO → BF (Backend)
-
-The backend compiler:
-1. **Memory Allocation**: Assigns tape cells to variables
-2. **Stack Management**: Implements function call stack
-3. **Code Generation**: Translates BFO to raw Brainfuck
-
-### Memory Layout
-```
-[global vars][stack frame 1][stack frame 2]...
-```
-
-### Instruction Translation
-
-#### `set x 10`
-```bf
->>>>>[-]++++++++++ ; Move to x's cell, clear, add 10
-```
-
-#### `add x y`
-```bf
->>[-<+>]< ; Copy y to x (destructive)
-```
-
-#### `print x`
-```bf
->. ; Move to x, output
-```
-
-#### `while x { ... }`
-```bf
->[...] ; Loop on x's cell
-```
-
-## Optimization Opportunities
-
-### BFO Level
-- **Constant folding**: Evaluate constant expressions at compile time
-- **Dead variable elimination**: Remove unused `int` variables
-- **Loop unrolling**: `for (i=0; i<CONSTANT; i++)` → repeated statements
-- **Native countdown loops**: `forn(cell n = value)` → BFO `while` with decrement
-- Constant propagation
-- Common subexpression elimination
-
-### BF Level
-- Pointer movement optimization (`>>>` instead of `>` `>` `>`)
-- Loop unrolling
-- Cell reuse
-
-## Example: Full Pipeline
+#### BFO Functions
+Only functions taking strictly **physical** `cell` parameters are preserved as `func` definitions in the BFO output.
 
 **HBF:**
 ```c
-int a = 5;
-int b = 10;
-cell c = a + b;
-putc(c);
+void add_cells(cell val1, cell val2) {
+    cell res = val1 + val2;
+    putc(res);
+}
 ```
-
+↓
 **BFO:**
 ```
-set a 5
-set b 10
-set c a
-add c b
-print c
+func add_cells(val1, val2) {
+    set res 0      ; Add-to-Zero pattern for variable moves
+    add res val1
+    add res val2
+    print res
+}
 ```
 
-**BF:**
-```bf
-+++++>++++++++++>[-]<<[->>+<<]>>.
-```
+## Stage 2: BFO → BF (Backend)
+
+The backend handles the low-level Brainfuck mapping:
+1. **Memory Allocation**: Assigns tape cells to BFO variables.
+2. **Stack Management**: Implements the function call stack.
+3. **Instruction Translation**: Translates `set`, `add`, `sub`, `while`, and `print` into raw `+`, `-`, `>`, `<`, `[`, `]`, `.` characters.
+
+### Instruction Translation Example
+
+| BFO | Brainfuck (Conceptual) |
+|-----|-------------------|
+| `set x 10` | `>>>>>[-]++++++++++` |
+| `add x y` | `>>[-<+>]<` |
+| `print x` | `>.` |
+| `while x { ... }` | `> [...]` |
+
+## Optimization Highlights
+
+- **Constant Folding**: `int a = 5 + 10;` results in NO code; the compiler simply tracks `a` as `15`.
+- **Loop Unrolling**: `for (int i=0; i<5; i++)` is replaced by the body statements repeated 5 times in the BFO.
+- **Dead Variable Elimination**: Virtual variables that aren't materialized for I/O or Physical assignments are silently removed.
 
 ## Debugging
 
-### View BFO Output
+To inspect the intermediate representation, use the `compile` command:
 ```bash
-cargo run -- build example.hbf
-cat example.bfo  # Inspect intermediate representation
+cargo run -- compile example.hbf
+cat example.bfo
 ```
-
-### Trace Execution
-BFO is human-readable, making it easier to debug than raw Brainfuck.

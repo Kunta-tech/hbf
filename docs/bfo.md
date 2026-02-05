@@ -1,18 +1,15 @@
 # BFO (Brainfuck Object) Format
 
-BFO is the intermediate representation between HBF source code and Brainfuck output.
+BFO is the intermediate representation between HBF source code and Brainfuck output. It is a strict, assembly-like text format.
 
 ## Purpose
 
-BFO serves as:
-1. **Optimization target**: All high-level abstractions (virtual types, loops, nested math) are erased before BFO generation.
-2. **Predetermined IR**: BFO output is strictly deterministic, using only literal assignments and atomic cell operations.
-3. **Debug format**: Human-readable representation of optimized, tape-ready code.
-4. **Linking format**: Allows separate compilation and linking of pre-optimized modules.
+BFO serves as a deterministic, tape-ready contract:
+1. **Erasure**: All high-level abstractions (virtual types, nested math, loops) are erased.
+2. **Deterministic IR**: Uses only literal assignments and atomic cell operations.
+3. **Debuggable**: A human-readable representation of the optimized code.
 
 ## Syntax
-
-BFO uses an assembly-like syntax with instructions and operands.
 
 ### Comments
 ```
@@ -24,143 +21,48 @@ BFO uses an assembly-like syntax with instructions and operands.
 #### `set <var> <literal>`
 Set a variable to a literal value (integer or character):
 ```
-set g1 'H'      ; Set g1 to ASCII 'H' (72)
-set x 10        ; Set x to 10
+set x 10
+set c 'H'
 ```
 > [!IMPORTANT]
-> BFO `set` does **not** support variable-to-variable assignment. All variable movement and folding must be handled by the HBF compiler's Virtual Variable model before generating BFO.
+> BFO `set` strictly supports **literals only**. Variable-to-variable moves must use the Add-to-Zero pattern.
 
-#### `add <var> <value>`
-Add to a variable:
+#### `add <var> <value>` / `sub <var> <value>`
+Perform arithmetic on a variable using a literal or another variable:
 ```
-add c b         ; c = c + b
-add x 5         ; x = x + 5
-```
-
-#### `sub <var> <value>`
-Subtract from a variable:
-```
-sub fff_i 1     ; fff_i = fff_i - 1
+add c 'a'  ; c = c + 97
+sub x y    ; x = x - y
 ```
 
-#### `print <var>`
-Output a variable as a character:
+#### `print <value>`
+Output a value (literal or variable) as a character:
 ```
-print g1
+print 'A'
+print msg_1
 ```
 
 #### `while <var> { ... }`
-Loop while variable is non-zero:
+Loop while the variable is non-zero.
 ```
-while fff_i {
-    print c
-    sub fff_i 1
+while count {
+    print 'B'
+    sub count 1
 }
 ```
 
 #### `func <name>(<params>) { ... }`
-Define a function:
+Define a physical function. Only used for functions taking `cell` parameters.
 ```
-func add_cells(a, b) {
-    set c 0
-    add c a
-    add c b
-    print c
+func repeat(c) {
+    while i {
+        print c
+        sub i 1
+    }
 }
 ```
 
 #### Function Call
 ```
-add_cells(5, 10)
-fff('H')
-```
-
-### Variable Initialization (Add-to-Zero)
-
-Since `set` only supports literals, moving a value from one variable to another (e.g., in function parameters or loop counters) is achieved via the **Add-to-Zero** pattern:
-
-```
-set target 0    ; Clear target
-add target src  ; Copy src value into target
-```
-
-## Compilation Strategy
-
-### Predictable Functions
-Functions that can be analyzed at compile-time are preserved in BFO:
-```
-func add_cells(a, b) {
-    set c 0
-    add c a
-    add c b
-    print c
-}
-```
-
-### Unpredictable Functions
-Functions with runtime-dependent behavior (e.g., string parameters) are **inlined**:
-
-**HBF:**
-```c
-void print_string(string s) {
-    for (int i = 0; i < s.length; i++) {
-        cell c = s[i];
-        putc(c);
-    }
-}
-print_string("Hello");
-```
-
-**BFO (Deterministic Inlining):**
-```
-; unpredictable function print_string in HBF is inlined in BFO
-set tmp 'H'
-print tmp
-set tmp 'e'
-print tmp
-set tmp 'l'
-print tmp
-set tmp 'l'
-print tmp
-set tmp 'o'
-print tmp
-```
-> [!NOTE]
-> In the latest compiler, `putc('H')` resolves to `print 'H'` (Direct Printing), eliminating even the `tmp` cell for literals.
-
-## Memory Model
-
-### Variables as Addresses
-Every variable is a memory address pointing to a cell on the Brainfuck tape.
-
-### Stack Allocation
-- Local variables are allocated on a stack
-- Memory is deallocated when out of scope
-- Global variables persist for the program lifetime
-
-### Scoping
-Variables can be made global by declaring them outside functions:
-```
-set fff_i 0   ; Global variable
-func fff(c) {
-    while fff_i {
-        print c
-        sub fff_i 1
-    }
-}
-```
-
-## Value Range
-All variables store integer values **mod 256** (0-255) or ASCII character values.
-
-## Example: Complete BFO Program
-
-```
-func add_cells(a, b) {
-    set c 0
-    add c a
-    add c b
-    print c
 }
 
 set fff_i 0   ; making i global

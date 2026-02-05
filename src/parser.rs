@@ -43,8 +43,7 @@ impl<'a> Parser<'a> {
             Token::Void => self.parse_function_decl(),
             Token::Int | Token::Cell | Token::Char | Token::String => {
                 // Could be function or variable
-                let type_token = self.current_token.clone();
-                self.advance();
+                let var_type = self.parse_type();
                 if let Token::Identifier(name) = &self.current_token {
                     let name_clone = name.clone();
                     self.advance();
@@ -53,7 +52,6 @@ impl<'a> Parser<'a> {
                         panic!("Non-void functions not yet supported");
                     } else {
                         // It's a variable declaration
-                        let var_type = self.token_to_type(&type_token);
                         self.eat(Token::Equals);
                         let value = self.parse_expr();
                         self.eat(Token::Semicolon);
@@ -69,6 +67,9 @@ impl<'a> Parser<'a> {
                 self.eat(Token::Semicolon);
                 Stmt::ExprStmt(expr)
             },
+            Token::For => self.parse_for(),
+            Token::Forn => self.parse_forn(),
+            Token::While => self.parse_while(),
             Token::Putc => self.parse_putc(),
             _ => panic!("Unexpected token at top level: {:?}", self.current_token),
         }
