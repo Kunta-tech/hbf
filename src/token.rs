@@ -5,12 +5,17 @@ pub enum Token {
     Void,
     Int,
     Cell,
+    Bool,
     String,
     Char,
     For,
     Forn,
     While,
+    If,
+    Else,
     Func,
+    True,
+    False,
     
     // Built-in functions
     Putc,

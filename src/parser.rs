@@ -41,7 +41,7 @@ impl<'a> Parser<'a> {
         // Top level can be function declarations, variable declarations, or function calls
         match &self.current_token {
             Token::Void => self.parse_function_decl(),
-            Token::Int | Token::Cell | Token::Char | Token::String => {
+            Token::Int | Token::Cell | Token::Bool | Token::Char | Token::String => {
                 // Could be function or variable
                 let var_type = self.parse_type();
                 if let Token::Identifier(name) = &self.current_token {
@@ -61,11 +61,33 @@ impl<'a> Parser<'a> {
                     panic!("Expected identifier after type");
                 }
             },
+            Token::If => self.parse_if(),
             Token::Identifier(_) => {
-                // Top-level function call
                 let expr = self.parse_expr();
-                self.eat(Token::Semicolon);
-                Stmt::ExprStmt(expr)
+                if self.current_token == Token::Equals {
+                    match expr {
+                        Expr::Variable(var_name) => {
+                            self.eat(Token::Equals);
+                            let value = self.parse_expr();
+                            self.eat(Token::Semicolon);
+                            Stmt::Assign { name: var_name, value }
+                        },
+                        Expr::ArrayAccess { array, index } => {
+                            if let Expr::Variable(array_name) = *array {
+                                self.eat(Token::Equals);
+                                let value = self.parse_expr();
+                                self.eat(Token::Semicolon);
+                                Stmt::IndexedAssign { name: array_name, index: *index, value }
+                            } else {
+                                panic!("Only variable arrays can be assigned to");
+                            }
+                        },
+                        _ => panic!("Invalid assignment target"),
+                    }
+                } else {
+                    self.eat(Token::Semicolon);
+                    Stmt::ExprStmt(expr)
+                }
             },
             Token::For => self.parse_for(),
             Token::Forn => self.parse_forn(),
@@ -131,35 +153,71 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Type {
-        let mut t = self.token_to_type(&self.current_token);
-        self.advance();
-        
-        // Handle array brackets: type[]
-        while self.current_token == Token::LBracket {
-            self.advance();
-            self.eat(Token::RBracket);
-            t = Type::Array(Box::new(t));
-        }
-        t
-    }
-
-    fn token_to_type(&self, token: &Token) -> Type {
-        match token {
+        let mut t = match &self.current_token {
             Token::Void => Type::Void,
             Token::Int => Type::Int,
             Token::Cell => Type::Cell,
+            Token::Bool => Type::Bool,
             Token::Char => Type::Char,
             Token::String => Type::Array(Box::new(Type::Char)), // char[]
-            _ => panic!("Expected type, got {:?}", token),
+            _ => panic!("Expected type, got {:?}", self.current_token),
+        };
+        self.advance();
+        
+        // Handle array brackets: type[]
+        if self.current_token == Token::LBracket {
+            self.eat(Token::LBracket);
+            self.eat(Token::RBracket);
+            t = Type::Array(Box::new(t));
         }
+        
+        t
     }
+
+    fn parse_if(&mut self) -> Stmt {
+        self.eat(Token::If);
+        self.eat(Token::LParen);
+        let condition = self.parse_expr();
+        self.eat(Token::RParen);
+        
+        self.eat(Token::LBrace);
+        let mut then_branch = Vec::new();
+        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+            then_branch.push(self.parse_statement());
+        }
+        self.eat(Token::RBrace);
+        
+        let else_branch = if self.current_token == Token::Else {
+            self.eat(Token::Else);
+            if self.current_token == Token::If {
+                // else if ... -> Treat as a single statement in the else block
+                let if_stmt = self.parse_if();
+                Some(vec![if_stmt])
+            } else {
+                // else { ... }
+                self.eat(Token::LBrace);
+                let mut else_stmts = Vec::new();
+                while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+                    else_stmts.push(self.parse_statement());
+                }
+                self.eat(Token::RBrace);
+                Some(else_stmts)
+            }
+        } else {
+            None
+        };
+        
+        Stmt::If { condition, then_branch, else_branch }
+    }
+
 
     fn parse_statement(&mut self) -> Stmt {
         match &self.current_token {
-            Token::Int | Token::Cell | Token::Char | Token::String => self.parse_var_decl(),
+            Token::Int | Token::Cell | Token::Bool | Token::Char | Token::String => self.parse_var_decl(),
             Token::For => self.parse_for(),
             Token::Forn => self.parse_forn(),
             Token::While => self.parse_while(),
+            Token::If => self.parse_if(),
             Token::Putc => self.parse_putc(),
             Token::Identifier(_) => {
                 // Peek at next token using a temporary variable if possible
@@ -451,6 +509,14 @@ impl<'a> Parser<'a> {
             Token::Number(n) => {
                 self.advance();
                 Expr::Number(n)
+            },
+            Token::True => {
+                self.advance();
+                Expr::BoolLiteral(true)
+            },
+            Token::False => {
+                self.advance();
+                Expr::BoolLiteral(false)
             },
             Token::CharLiteral(c) => {
                 self.advance();

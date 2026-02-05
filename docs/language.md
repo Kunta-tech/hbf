@@ -5,6 +5,7 @@ HBF (Higher Brainfuck) is a C-like compiled language that targets Brainfuck thro
 
 ### Primitive Types
 - **`int`**: Integer type (8-bit, mod 256). **Virtual**.
+- **`bool`**: Boolean type (`true`/`false`). **Virtual**.
 - **`char`**: Character type. **Virtual**.
 - **`cell`**: Raw memory cell type. **Physical**.
 - **`void`**: Function return type.
@@ -13,7 +14,7 @@ HBF (Higher Brainfuck) is a C-like compiled language that targets Brainfuck thro
 - **`type[]`**: Array of the specified type (e.g., `cell[]`, `int[]`, `char[]`).
 
 ### Virtual vs Physical Types
-- **Virtual Types (`int`, `char`, `int[]`, `char[]`)**: Exist only in the compiler's symbol table. They are folded into BFO instructions and occupy NO tape space.
+- **Virtual Types (`int`, `bool`, `char`)**: Exist only in the compiler's symbol table. They are folded into BFO instructions and occupy NO tape space.
 - **Physical Types (`cell`, `cell[]`)**: Map directly to Brainfuck tape cells with stable addresses.
 
 ## Variables
@@ -31,6 +32,9 @@ cell c = 65;
 - Global/Top-level variables are accessible everywhere.
 
 ## Literals & Strings
+
+### Boolean Literals
+The keywords `true` and `false` are available. Since `bool` is a virtual type, these values are folded to integer constants (`1` and `0` respectively) during compilation.
 
 ### String Literals
 String literals are automatically converted to `char[]` arrays. When used with `putc`, they generate sequence of direct `print` instructions.

@@ -2,7 +2,7 @@
 
 ## 1. Always-Virtual Variable Model
 
-HBF employs an "Always-Virtual" model for all non-`cell` scalar and array types (`int`, `char`, `int[]`, `char[]`). These variables exist purely in the compiler's symbol table and do not occupy a fixed slot on the Brainfuck tape by default.
+HBF employs an "Always-Virtual" model for all non-`cell` scalar and array types (`int`, `bool`, `char`, `int[]`, `char[]`). These variables exist purely in the compiler's symbol table and do not occupy a fixed slot on the Brainfuck tape by default.
 
 ### The Solution: Virtual Folding
 
@@ -23,6 +23,22 @@ print c
 ### Benefits
 - **Zero Footprint**: Virtual variables use 0 tape cells.
 - **Limitless Arithmetic**: Since virtual math happens at compile-time, it isn't restricted by Brainfuck's pointer movement or destructive copy limits.
+
+### Boolean Folding
+
+Boolean types are strictly virtual. They are folded into integer constants (`1` for `true`, `0` for `false`) during the compilation process.
+
+**HBF:**
+```c
+bool flag = true;
+int result = 48 + flag; // 48 + 1 = 49 ('1')
+putc(result);
+```
+
+**BFO:**
+```
+print 49
+```
 
 ---
 

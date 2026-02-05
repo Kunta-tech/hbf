@@ -6,13 +6,25 @@ pub enum Type {
     Void,
     Int,
     Cell,
+    Bool,
     Char,
     Array(Box<Type>),
+}
+
+impl Type {
+    pub fn is_virtual(&self) -> bool {
+        match self {
+            Type::Int | Type::Bool | Type::Char => true,
+            Type::Array(inner) => inner.is_virtual(),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Expr {
     Number(i32),
+    BoolLiteral(bool),
     CharLiteral(char),
     StringLiteral(String),
     Variable(String),
@@ -73,6 +85,11 @@ pub enum Stmt {
     While {
         condition: Expr,
         body: Vec<Stmt>,
+    },
+    If {
+        condition: Expr,
+        then_branch: Vec<Stmt>,
+        else_branch: Option<Vec<Stmt>>,
     },
     ExprStmt(Expr), // For function calls as statements
 }

@@ -24,7 +24,7 @@ impl BFOGenerator {
 
     fn get_array_var_name(&self, name: &str, index: i32) -> String {
         if let Some((_, _, elem_type, _)) = self.arrays.get(name) {
-            if *elem_type == Type::Cell {
+            if !elem_type.is_virtual() {
                 return format!("{}_{}", name, index + 1);
             }
         }
@@ -66,7 +66,7 @@ impl BFOGenerator {
 
     fn materialize_to_cell(&mut self, name: &str, expr: Expr) {
         match &expr {
-            Expr::Number(_) | Expr::CharLiteral(_) => {
+            Expr::Number(_) | Expr::CharLiteral(_) | Expr::BoolLiteral(_) => {
                 self.indent();
                 self.emit(&format!("set {} ", name));
                 self.gen_expr_simple(expr);
@@ -83,7 +83,7 @@ impl BFOGenerator {
                 if let Expr::Number(i) = index.as_ref() {
                     if let Expr::Variable(array_name) = array.as_ref() {
                         if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
-                            if *elem_type == Type::Cell {
+                            if !elem_type.is_virtual() {
                                 let cell_name = self.get_array_var_name(array_name, *i);
                                 self.indent();
                                 self.emit_line(&format!("set {} 0", name));
@@ -160,7 +160,7 @@ impl BFOGenerator {
                 match &var_type {
                     Type::Cell => self.materialize_to_cell(&name, folded),
                     Type::Array(inner) => {
-                        if **inner == Type::Cell {
+                        if !inner.is_virtual() {
                             // cell[] is physical: contiguous named cells
                             if let Expr::ArrayLiteral(elements) = folded {
                                 self.arrays.insert(name.clone(), (0, elements.len(), (**inner).clone(), None));
@@ -173,7 +173,7 @@ impl BFOGenerator {
                                 }
                             }
                         } else {
-                            // int[] or char[] is virtual: store in memory
+                            // int[] or char[] or bool[] is virtual: store in memory
                             if let Expr::StringLiteral(ref s_val) = folded {
                                 let char_literals: Vec<Expr> = s_val.chars().map(Expr::CharLiteral).collect();
                                 self.arrays.insert(name.clone(), (0, s_val.len(), (**inner).clone(), Some(char_literals)));
@@ -194,7 +194,7 @@ impl BFOGenerator {
                 let folded_val = self.fold_expr(value, &self.variables.clone());
                 if let Expr::Number(i) = index {
                     if let Some((_, _, elem_type, literals)) = self.arrays.get_mut(&name) {
-                        if *elem_type == Type::Cell {
+                        if !elem_type.is_virtual() {
                             // physical cell[] update
                             let cell_name = self.get_array_var_name(&name, i);
                             self.materialize_to_cell(&cell_name, folded_val);
@@ -271,7 +271,7 @@ impl BFOGenerator {
                         if let Expr::Number(i) = index.as_ref() {
                             if let Expr::Variable(array_name) = array.as_ref() {
                                 if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
-                                    if *elem_type == Type::Cell {
+                                    if !elem_type.is_virtual() {
                                         let cell_name = self.get_array_var_name(array_name, *i);
                                         self.indent();
                                         self.emit_line(&format!("print {}", cell_name));
@@ -460,6 +460,24 @@ impl BFOGenerator {
                     self.emit_line(")");
                 }
             },
+            Stmt::If { condition, then_branch, else_branch } => {
+                let folded_cond = self.fold_expr(condition, &self.variables);
+                let cond_val = match folded_cond {
+                    Expr::BoolLiteral(b) => b,
+                    Expr::Number(n) => n != 0,
+                    _ => panic!("If condition must be a compile-time constant boolean/integer, got {:?}", folded_cond),
+                };
+
+                if cond_val {
+                    for s in then_branch {
+                        self.gen_stmt(s, false);
+                    }
+                } else if let Some(else_stmts) = else_branch {
+                    for s in else_stmts {
+                        self.gen_stmt(s, false);
+                    }
+                }
+            },
         }
     }
 
@@ -471,6 +489,7 @@ impl BFOGenerator {
                 else if c == '\t' { self.emit("'\\t'"); }
                 else { self.emit(&format!("'{}'", c)); }
             },
+            Expr::BoolLiteral(b) => self.emit(&format!("{}", if b { 1 } else { 0 })),
             Expr::Variable(name) => {
                 if let Some(val) = self.variables.get(&name) {
                     // Recursively resolve in case of nested virtuals
@@ -493,7 +512,7 @@ impl BFOGenerator {
                         Expr::Variable(name) => {
                             // If it's a streaming array, we can return its literal value if known
                             if let Some((_, _, elem_type, Some(literals))) = self.arrays.get(name) {
-                                if *elem_type != Type::Cell {
+                                if elem_type.is_virtual() {
                                     if let Some(lit) = literals.get(*i as usize) {
                                         self.gen_expr(lit.clone());
                                         return;
@@ -552,6 +571,9 @@ impl BFOGenerator {
                 else if c == '\t' { self.emit("'\\t'"); }
                 else { self.emit(&format!("'{}'", c)); }
             },
+            Expr::BoolLiteral(b) => {
+                self.emit(&format!("{}", if b { 1 } else { 0 }));
+            },
             Expr::Variable(name) => {
                 if let Some(val) = self.variables.get(&name) {
                     // Recursively resolve to literal
@@ -567,7 +589,7 @@ impl BFOGenerator {
                         Expr::Variable(name) => {
                             // If it's a streaming array, we can return its literal value if known
                             if let Some((_, _, elem_type, Some(literals))) = self.arrays.get(name) {
-                                if *elem_type != Type::Cell {
+                                if elem_type.is_virtual() {
                                     if let Some(lit) = literals.get(*i as usize) {
                                         self.gen_expr_simple(lit.clone());
                                         return;
@@ -626,17 +648,17 @@ impl BFOGenerator {
                     let folded_value = self.fold_expr(value, &var_values);
                     
                     // If this is a virtual scalar variable with a constant value, just track it
-                    if var_type == Type::Int || var_type == Type::Char {
-                        match &folded_value {
-                            Expr::Number(_) | Expr::CharLiteral(_) => {
-                                var_values.insert(name.clone(), folded_value.clone());
-                                self.variables.insert(name.clone(), folded_value);
-                                // Don't emit this variable yet - it's virtual and silent
-                                continue;
-                            },
-                            _ => {}
-                        }
+                if var_type.is_virtual() {
+                    match &folded_value {
+                        Expr::Number(_) | Expr::CharLiteral(_) | Expr::BoolLiteral(_) => {
+                            var_values.insert(name.clone(), folded_value.clone());
+                            self.variables.insert(name.clone(), folded_value);
+                            // Don't emit this variable yet - it's virtual and silent
+                            continue;
+                        },
+                        _ => {}
                     }
+                }
                     
                     // If this is a cell variable, fold any int dependencies
                     if var_type == Type::Cell {
@@ -686,10 +708,11 @@ impl BFOGenerator {
                 let left_folded = self.fold_expr(*left, var_values);
                 let right_folded = self.fold_expr(*right, var_values);
                 
-                // Helper to get numeric value of Number or CharLiteral
+                // Helper to get numeric value of Number or CharLiteral or BoolLiteral
                 let to_num = |e: &Expr| match e {
                     Expr::Number(n) => Some(*n),
                     Expr::CharLiteral(c) => Some(*c as i32),
+                    Expr::BoolLiteral(b) => Some(if *b { 1 } else { 0 }),
                     _ => None,
                 };
 
