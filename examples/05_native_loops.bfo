@@ -1,10 +1,9 @@
 func main() {
     set count 5
-    set i 0
-    add i count
-    while i {
+    while count {
         print '*'
-        sub i 1
+        sub count 1
     }
     print '\n'
 }
+main()

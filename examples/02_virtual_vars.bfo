@@ -4,3 +4,4 @@ func main() {
     print 66
     print '\n'
 }
+main()

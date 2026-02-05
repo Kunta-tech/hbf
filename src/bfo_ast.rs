@@ -8,9 +8,6 @@ pub struct BFOProgram {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BFOItem {
-    // Global variable: set x 5
-    GlobalSet { name: String, value: BFOValue },
-    
     // Function definition
     Function {
         name: String,
@@ -18,8 +15,8 @@ pub enum BFOItem {
         body: Vec<BFOStmt>,
     },
     
-    // Top-level function call
-    FunctionCall { name: String, args: Vec<BFOValue> },
+    // Top-level statement
+    Statement(BFOStmt),
 }
 
 #[derive(Debug, Clone, PartialEq)]

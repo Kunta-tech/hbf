@@ -38,9 +38,62 @@ impl<'a> Lexer<'a> {
                         Token::Minus
                     }
                 },
-                '<' => { self.input.next(); Token::Less },
-                '>' => { self.input.next(); Token::Greater },
-                '=' => { self.input.next(); Token::Equals },
+                '<' => {
+                    self.input.next();
+                    if let Some(&'=') = self.input.peek() {
+                        self.input.next();
+                        Token::LessEqual
+                    } else {
+                        Token::Less
+                    }
+                },
+                '>' => {
+                    self.input.next();
+                    if let Some(&'=') = self.input.peek() {
+                        self.input.next();
+                        Token::GreaterEqual
+                    } else {
+                        Token::Greater
+                    }
+                },
+                '=' => {
+                    self.input.next();
+                    if let Some(&'=') = self.input.peek() {
+                        self.input.next();
+                        Token::DoubleEquals
+                    } else {
+                        Token::Equals
+                    }
+                },
+                '!' => {
+                    self.input.next();
+                    if let Some(&'=') = self.input.peek() {
+                        self.input.next();
+                        Token::NotEquals
+                    } else {
+                        panic!("Unexpected character: !");
+                    }
+                },
+                '&' => {
+                    self.input.next();
+                    if let Some(&'&') = self.input.peek() {
+                        self.input.next();
+                        Token::AndAnd
+                    } else {
+                        panic!("Unexpected character: &");
+                    }
+                },
+                '|' => {
+                    self.input.next();
+                    if let Some(&'|') = self.input.peek() {
+                        self.input.next();
+                        Token::OrOr
+                    } else {
+                        panic!("Unexpected character: |");
+                    }
+                },
+                '*' => { self.input.next(); Token::Star },
+                '%' => { self.input.next(); Token::Percent },
                 '(' => { self.input.next(); Token::LParen },
                 ')' => { self.input.next(); Token::RParen },
                 '{' => { self.input.next(); Token::LBrace },
@@ -52,12 +105,13 @@ impl<'a> Lexer<'a> {
                 '.' => { self.input.next(); Token::Dot },
                 '/' => {
                     self.input.next();
-                    if let Some(&'/') = self.input.peek() {
-                        self.input.next();
-                        self.skip_comment();
-                        self.next_token()
-                    } else {
-                        panic!("Unexpected character: /");
+                    match self.input.peek() {
+                        Some(&'/') => {
+                            self.input.next();
+                            self.skip_comment();
+                            self.next_token()
+                        },
+                        _ => Token::Slash,
                     }
                 },
                 '"' => self.read_string(),

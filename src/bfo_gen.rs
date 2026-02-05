@@ -7,8 +7,11 @@ pub struct BFOGenerator {
     output: String,
     functions: HashMap<String, Stmt>, // Store function definitions
     arrays: HashMap<String, (usize, usize, Type, Option<Vec<Expr>>)>, // name -> (base_addr, length, element_type, literals)
-    variables: HashMap<String, Expr>, // Virtual variables (int, char)
+    variables: Vec<HashMap<String, Expr>>, // Scoped virtual variables (int, char)
     indent_level: usize,
+    forn_counter: usize,
+    native_loop_depth: usize,
+    zeroed_cells: std::collections::HashSet<String>,
 }
 
 impl BFOGenerator {
@@ -17,15 +20,43 @@ impl BFOGenerator {
             output: String::new(),
             functions: HashMap::new(),
             arrays: HashMap::new(),
-            variables: HashMap::new(),
+            variables: vec![HashMap::new()],
             indent_level: 0,
+            forn_counter: 0,
+            native_loop_depth: 0,
+            zeroed_cells: std::collections::HashSet::new(),
+        }
+    }
+
+    fn push_scope(&mut self) {
+        self.variables.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) {
+        if self.variables.len() > 1 {
+            self.variables.pop();
+        }
+    }
+
+    fn get_variable(&self, name: &str) -> Option<Expr> {
+        for scope in self.variables.iter().rev() {
+            if let Some(val) = scope.get(name) {
+                return Some(val.clone());
+            }
+        }
+        None
+    }
+
+    fn set_variable(&mut self, name: &str, val: Expr) {
+        if let Some(scope) = self.variables.last_mut() {
+            scope.insert(name.to_string(), val);
         }
     }
 
     fn get_array_var_name(&self, name: &str, index: i32) -> String {
         if let Some((_, _, elem_type, _)) = self.arrays.get(name) {
             if !elem_type.is_virtual() {
-                return format!("{}_{}", name, index + 1);
+                return format!("__hbf_cell_{}_{}", name, index);
             }
         }
         name.to_string()
@@ -64,19 +95,55 @@ impl BFOGenerator {
         }
     }
 
+    fn ensure_zero(&mut self, name: &str) {
+        if !self.zeroed_cells.contains(name) {
+            self.indent();
+            self.emit_line(&format!("set {} 0", name));
+            self.zeroed_cells.insert(name.to_string());
+        }
+    }
+
+    fn mark_dirty(&mut self, name: &str) {
+        self.zeroed_cells.remove(name);
+    }
+
+    fn emit_set(&mut self, name: &str, val: &str) {
+        self.indent();
+        self.emit_line(&format!("set {} {}", name, val));
+        if val == "0" || val == "'\\0'" {
+            self.zeroed_cells.insert(name.to_string());
+        } else {
+            self.zeroed_cells.remove(name);
+        }
+    }
+
+    fn emit_add(&mut self, name: &str, val: &str) {
+        self.indent();
+        self.emit_line(&format!("add {} {}", name, val));
+        self.zeroed_cells.remove(name);
+    }
+
+    fn emit_sub(&mut self, name: &str, val: &str) {
+        self.indent();
+        self.emit_line(&format!("sub {} {}", name, val));
+        self.zeroed_cells.remove(name);
+    }
+
     fn materialize_to_cell(&mut self, name: &str, expr: Expr) {
         match &expr {
-            Expr::Number(_) | Expr::CharLiteral(_) | Expr::BoolLiteral(_) => {
-                self.indent();
-                self.emit(&format!("set {} ", name));
-                self.gen_expr_simple(expr);
-                self.emit_line("");
-            },
+            Expr::Number(n) => {
+                self.emit_set(name, &n.to_string());
+            }
+            Expr::CharLiteral(c) => {
+                self.emit_set(name, &format!("'{}'", c.escape_default()));
+            }
+            Expr::BoolLiteral(b) => {
+                self.emit_set(name, if *b { "1" } else { "0" });
+            }
             Expr::Variable(v) => {
-                self.indent();
-                self.emit_line(&format!("set {} 0", name));
-                self.indent();
-                self.emit_line(&format!("add {} {}", name, v));
+                if name == v { return; }
+                self.ensure_zero(name);
+                self.emit_add(name, v);
             },
             Expr::ArrayAccess { array, index } => {
                 // If it's a physical array access, we treat it as a variable for the copy
@@ -85,21 +152,20 @@ impl BFOGenerator {
                         if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
                             if !elem_type.is_virtual() {
                                 let cell_name = self.get_array_var_name(array_name, *i);
-                                self.indent();
-                                self.emit_line(&format!("set {} 0", name));
-                                self.indent();
-                                self.emit_line(&format!("add {} {}", name, cell_name));
+                                self.ensure_zero(name);
+                                self.emit_add(name, &cell_name);
                                 return;
                             }
                         }
                     }
                 }
                 
-                // Otherwise fall back to gen_expr_simple (which will panic if it's not a literal)
+                // Otherwise fall back to gen_expr_simple
                 self.indent();
                 self.emit(&format!("set {} ", name));
                 self.gen_expr_simple(expr);
                 self.emit_line("");
+                self.mark_dirty(name);
             },
             Expr::BinaryOp { left, op, right } => {
                 // Check for shorthands: A = A + B, A = B + A, A = A - B
@@ -112,22 +178,24 @@ impl BFOGenerator {
                     self.emit(&format!("add {} ", name));
                     self.gen_expr_simple(*right.clone());
                     self.emit_line("");
+                    self.mark_dirty(name);
                 } else if right_is_name && *op == Token::Plus {
                     // A = left + A  =>  add A left
                     self.indent();
                     self.emit(&format!("add {} ", name));
                     self.gen_expr_simple(*left.clone());
                     self.emit_line("");
+                    self.mark_dirty(name);
                 } else if left_is_name && *op == Token::Minus {
                     // A = A - right  =>  sub A right
                     self.indent();
                     self.emit(&format!("sub {} ", name));
                     self.gen_expr_simple(*right.clone());
                     self.emit_line("");
+                    self.mark_dirty(name);
                 } else {
                     // General case: clear and rebuild
-                    self.indent();
-                    self.emit_line(&format!("set {} 0", name));
+                    self.ensure_zero(name);
                     
                     // Add left
                     self.indent();
@@ -141,6 +209,7 @@ impl BFOGenerator {
                     self.emit(&format!("{} {} ", op_cmd, name));
                     self.gen_expr_simple(*right.clone());
                     self.emit_line("");
+                    self.mark_dirty(name);
                 }
             },
             _ => {
@@ -148,6 +217,7 @@ impl BFOGenerator {
                 self.emit(&format!("set {} ", name));
                 self.gen_expr_simple(expr);
                 self.emit_line("");
+                self.mark_dirty(name);
             }
         }
     }
@@ -155,8 +225,8 @@ impl BFOGenerator {
     fn gen_stmt(&mut self, stmt: Stmt, is_top_level: bool) {
         match stmt {
             Stmt::VarDecl { var_type, name, value } => {
-                let folded = self.fold_expr(value, &self.variables.clone());
-                
+                let folded = self.fold_expr(value);
+    
                 match &var_type {
                     Type::Cell => self.materialize_to_cell(&name, folded),
                     Type::Array(inner) => {
@@ -165,12 +235,12 @@ impl BFOGenerator {
                             if let Expr::ArrayLiteral(elements) = folded {
                                 self.arrays.insert(name.clone(), (0, elements.len(), (**inner).clone(), None));
                                 for (i, el) in elements.iter().enumerate() {
-                                    let cell_name = format!("{}_{}", name, i + 1);
-                                    self.indent();
-                                    self.emit(&format!("set {} ", cell_name));
-                                    self.gen_expr_simple(el.clone());
-                                    self.emit_line("");
+                                    let cell_name = format!("__hbf_cell_{}_{}", name, i);
+                                    self.materialize_to_cell(&cell_name, el.clone());
                                 }
+                            } else {
+                                // Default array init? Usually arrays are sized.
+                                self.arrays.insert(name, (0, 0, (**inner).clone(), None));
                             }
                         } else {
                             // int[] or char[] or bool[] is virtual: store in memory
@@ -180,18 +250,16 @@ impl BFOGenerator {
                             } else if let Expr::ArrayLiteral(ref elements) = folded {
                                 self.arrays.insert(name.clone(), (0, elements.len(), (**inner).clone(), Some(elements.clone())));
                             }
-                            // Silent: No BFO for virtual arrays
                         }
                     },
                     _ => {
-                        // int or char is virtual: store in memory
-                        self.variables.insert(name, folded);
-                        // Silent: No BFO for virtual variables
+                        // int or char is virtual: store in memory (current scope)
+                        self.set_variable(&name, folded);
                     }
                 }
             },
             Stmt::IndexedAssign { name, index, value } => {
-                let folded_val = self.fold_expr(value, &self.variables.clone());
+                let folded_val = self.fold_expr(value);
                 if let Expr::Number(i) = index {
                     if let Some((_, _, elem_type, literals)) = self.arrays.get_mut(&name) {
                         if !elem_type.is_virtual() {
@@ -200,6 +268,9 @@ impl BFOGenerator {
                             self.materialize_to_cell(&cell_name, folded_val);
                         } else {
                             // virtual array update (silent)
+                            if self.native_loop_depth > 0 {
+                                eprintln!("WARNING: Modifying virtual array '{}' inside a native loop. This value will not update in the generated BFO.", name);
+                            }
                             if let Some(lits) = literals {
                                 if (i as usize) < lits.len() {
                                     lits[i as usize] = folded_val;
@@ -210,13 +281,13 @@ impl BFOGenerator {
                 }
             },
             Stmt::Assign { name, value } => {
-                let folded = self.fold_expr(value, &self.variables.clone());
+                let folded = self.fold_expr(value);
                 // Determine if 'name' is physical or virtual
-                // For now, we assume if it was declared as cell it is physical
-                // (Need a way to check var_type of existing variables)
-                // Actually, let's just check if it's in our virtual 'variables' map
-                if self.variables.contains_key(&name) {
-                    self.variables.insert(name, folded);
+                if self.get_variable(&name).is_some() {
+                    if self.native_loop_depth > 0 {
+                        eprintln!("WARNING: Modifying virtual variable '{}' inside a native loop. This value will not update in the generated BFO.", name);
+                    }
+                    self.set_variable(&name, folded);
                 } else {
                     self.materialize_to_cell(&name, folded);
                 }
@@ -224,27 +295,32 @@ impl BFOGenerator {
             Stmt::FuncDecl { name, params, return_type: _, body } => {
                 if is_top_level {
                     if self.is_predictable_function(&params) {
+                        let old_zeros = self.zeroed_cells.clone();
+                        self.zeroed_cells.clear();
+            
                         self.emit(&format!("func {}(", name));
                         for (i, (_, param_name)) in params.iter().enumerate() {
                             if i > 0 { self.emit(", "); }
                             self.emit(param_name);
                         }
                         self.emit_line(") {");
-                        
+            
                         self.indent_level += 1;
                         for s in body {
                             self.gen_stmt(s, false);
                         }
                         self.indent_level -= 1;
                         self.emit_line("}");
+            
+                        self.zeroed_cells = old_zeros;
                     } else {
                         self.emit_line(&format!("; unpredictable function {}", name));
                     }
                 }
             },
             Stmt::Putc(expr) => {
-                let folded = self.fold_expr(expr, &self.variables.clone());
-                
+                let folded = self.fold_expr(expr);
+    
                 match folded {
                     Expr::Variable(name) => {
                         // If it's a virtual array, print sequentially
@@ -280,11 +356,11 @@ impl BFOGenerator {
                                 }
                             }
                         }
-                        
+            
                         // Otherwise fall back to materialization
-                        self.materialize_to_cell("tmp", Expr::ArrayAccess { array, index });
+                        self.materialize_to_cell("__hbf_tmp", Expr::ArrayAccess { array, index });
                         self.indent();
-                        self.emit_line("print tmp");
+                        self.emit_line("print __hbf_tmp");
                     },
                     Expr::Number(n) => {
                         self.indent();
@@ -311,116 +387,101 @@ impl BFOGenerator {
                     _ => {
                         // Complex expression materialization
                         // Use local 'tmp' cell for BFO printing
-                        self.materialize_to_cell("tmp", folded);
+                        self.materialize_to_cell("__hbf_tmp", folded);
                         self.indent();
-                        self.emit_line("print tmp");
+                        self.emit_line("print __hbf_tmp");
                     }
                 }
             },
             Stmt::For { init, condition, update, body } => {
-                // Try to fold the condition to help optimization
-                let folded_condition = self.fold_expr(condition.clone(), &self.variables.clone());
-                // Check if we can unroll the loop (constant iteration count)
-                let can_optimize = self.can_optimize_for_loop(&init, &folded_condition, &update);
-                
-                if let Some((var_name, limit)) = can_optimize {
-                    // Check if this loop is iterating over a streaming array (non-cell)
-                    // Pattern: for (int i=0; i < arr.length; i++) { ... arr[i] ... }
-                    // If arr is streaming, we need to set the value in each iteration
-                    
-
-                    // Loop unrolling: repeat the body N times
-                    for i in 0..limit {
-                        for s in &body {
-                            // Substitute loop variable with current index
-                            let substituted_s = self.substitute_stmt(s.clone(), &var_name, i);
-                            self.gen_stmt(substituted_s, false);
-                        }
-                    }
-                } else {
-                    // Fallback: Standard for loop conversion to while
-                    // init
-                    self.gen_stmt(*init, false);
-                    
-                    // while condition
-                    self.indent();
-                    self.emit("while ");
-                    match &folded_condition {
-                        Expr::Variable(name) => self.emit(name),
-                        Expr::BinaryOp { left, op: _, right: _ } => {
-                            if let Expr::Variable(name) = left.as_ref() {
-                                self.emit(name);
-                            } else {
-                                panic!("Complex comparison not supported: {:?}", folded_condition);
+                // for(;;) is strictly for unfolding (simulation)
+                self.push_scope();
+                if let Some(i) = init {
+                    self.gen_stmt(*i.clone(), false);
+                }
+    
+                let mut iterations = 0;
+                while iterations < 10000 {
+                    let cond_val = if let Some(cond) = &condition {
+                        let folded = self.fold_expr(cond.clone());
+                        match folded {
+                            Expr::BoolLiteral(b) => b,
+                            Expr::Number(n) => n != 0,
+                            _ => {
+                                panic!("For loop condition must be a compile-time constant for unfolding, got {:?}", folded);
                             }
-                        },
-                        _ => panic!("Unsupported for loop condition: {:?}", folded_condition),
+                        }
+                    } else {
+                        true
+                    };
+        
+                    if !cond_val { break; }
+        
+                    for s in &body {
+                        self.gen_stmt(s.clone(), false);
                     }
-                    self.emit_line(" {");
-                    
-                    self.indent_level += 1;
-                    for s in body {
-                        self.gen_stmt(s, false);
+        
+                    if let Some(ref u) = update {
+                        self.gen_stmt(*u.clone(), false);
                     }
-                    
-                    // update
-                    self.gen_stmt(*update, false);
-                    self.indent_level -= 1;
-                    
-                    self.indent();
-                    self.emit_line("}");
+                    iterations += 1;
                 }
+    
+                if iterations >= 10000 {
+                    panic!("Loop unrolling exceeded limit (possible infinite loop or too large)");
+                }
+                self.pop_scope();
             },
-            Stmt::Forn { name, count, body } => {
-                let folded_count = self.fold_expr(count, &self.variables.clone());
-                // Generate native countdown loop: set n value; while n { body; sub n 1 }
-                self.indent();
-                // Special optimization: if count is a variable and we are in a function,
-                // we can often use it directly if we handle the BFO 'set' restriction.
-                match &folded_count {
-                    Expr::Number(n) => self.emit_line(&format!("set {} {}", name, n)),
-                    Expr::CharLiteral(c) => self.emit_line(&format!("set {} '{}'", name, c.escape_default())),
-                    Expr::Variable(v) => {
-                        // Use the 'add-to-zero' trick to match user's efficient copying
-                        self.emit_line(&format!("set {} 0", name));
-                        self.indent();
-                        self.emit_line(&format!("add {} {}", name, v));
-                    },
+            Stmt::Forn { count, body } => {
+                let folded_count = self.fold_expr(count.clone());
+    
+                // Determine the loop counter name
+                let mut is_var = false;
+                let name = match &count {
+                    Expr::Variable(n) => n.clone(),
                     _ => {
-                        self.emit(&format!("set {} ", name));
-                        self.gen_expr_simple(folded_count);
-                        self.emit_line("");
+                        // Generate an anonymous counter
+                        let n = format!("__hbf_forn_{}", self.forn_counter);
+                        self.forn_counter += 1;
+                        is_var = true;
+                        n
                     }
-                }
-                
+                };
+
+                // Generate native countdown loop: set n value; while n { body; sub n 1 }
+                self.materialize_to_cell(&name, folded_count);
+    
                 self.indent();
                 self.emit_line(&format!("while {} {{", name));
-                
+    
                 self.indent_level += 1;
+                self.native_loop_depth += 1;
+                let old_zeros = self.zeroed_cells.clone();
+                self.zeroed_cells.clear(); // Unknown inside loop
+
                 for s in body {
                     self.gen_stmt(s, false);
                 }
-                
+                self.native_loop_depth -= 1;
+    
                 // Decrement counter
-                self.indent();
-                self.emit_line(&format!("sub {} 1", name));
+                self.emit_sub(&name, "1");
                 self.indent_level -= 1;
-                
+    
                 self.indent();
                 self.emit_line("}");
+                self.zeroed_cells = old_zeros; // Restore (or just clear)
+                self.zeroed_cells.clear(); // Actually better to clear after loop too
+                if is_var {
+                    self.forn_counter -= 1;
+                }
             },
             Stmt::While { condition, body } => {
                 self.indent();
                 self.emit("while ");
-                // For while loops, we only support simple variable conditions in BFO
-                // Comparison expressions like i < n need to be handled differently
-                // For now, we'll just emit the left side of comparison (simplified)
                 match &condition {
                     Expr::Variable(name) => self.emit(name),
                     Expr::BinaryOp { left, op: _, right: _ } => {
-                        // For comparisons, we need a temp variable
-                        // This is a simplification - proper implementation would need
-                        // to compute the comparison result
                         if let Expr::Variable(name) = left.as_ref() {
                             self.emit(name);
                         } else {
@@ -430,15 +491,22 @@ impl BFOGenerator {
                     _ => panic!("Unsupported while condition"),
                 }
                 self.emit_line(" {");
-                
+    
                 self.indent_level += 1;
+                self.native_loop_depth += 1;
+                let old_zeros = self.zeroed_cells.clone();
+                self.zeroed_cells.clear();
+    
                 for s in body {
                     self.gen_stmt(s, false);
                 }
+                self.native_loop_depth -= 1;
                 self.indent_level -= 1;
-                
+    
                 self.indent();
                 self.emit_line("}");
+                self.zeroed_cells = old_zeros;
+                self.zeroed_cells.clear();
             },
             Stmt::ExprStmt(expr) => {
                 if let Expr::FunctionCall { name, args } = expr {
@@ -450,7 +518,7 @@ impl BFOGenerator {
                             }
                         }
                     }
-                    
+        
                     self.indent();
                     self.emit(&format!("{}(", name));
                     for (i, arg) in args.iter().enumerate() {
@@ -461,21 +529,107 @@ impl BFOGenerator {
                 }
             },
             Stmt::If { condition, then_branch, else_branch } => {
-                let folded_cond = self.fold_expr(condition, &self.variables);
-                let cond_val = match folded_cond {
-                    Expr::BoolLiteral(b) => b,
-                    Expr::Number(n) => n != 0,
-                    _ => panic!("If condition must be a compile-time constant boolean/integer, got {:?}", folded_cond),
+                let folded_cond = self.fold_expr(condition);
+                match folded_cond {
+                    Expr::BoolLiteral(b) => {
+                        if b {
+                            for s in then_branch { self.gen_stmt(s, false); }
+                        } else if let Some(else_stmts) = else_branch {
+                            for s in else_stmts { self.gen_stmt(s, false); }
+                        }
+                    },
+                    Expr::Number(n) => {
+                        if n != 0 {
+                            for s in then_branch { self.gen_stmt(s, false); }
+                        } else if let Some(else_stmts) = else_branch {
+                            for s in else_stmts { self.gen_stmt(s, false); }
+                        }
+                    },
+                    _ => {
+                        // Runtime IF - convert to single-execution while loop
+                        let cond_name = format!("__hbf_if_cond_{}", self.forn_counter);
+                        self.forn_counter += 1;
+                        self.materialize_to_cell(&cond_name, folded_cond);
+            
+                        if let Some(else_stmts) = else_branch {
+                            let else_name = format!("__hbf_else_flag_{}", self.forn_counter);
+                            self.forn_counter += 1;
+                            self.emit_set(&else_name, "1");
+                
+                            self.indent();
+                            self.emit_line(&format!("while {} {{", cond_name));
+                            self.indent_level += 1;
+                            for s in then_branch {
+                                self.gen_stmt(s, false);
+                            }
+                            self.emit_set(&cond_name, "0");
+                            self.emit_set(&else_name, "0");
+                            self.indent_level -= 1;
+                            self.indent();
+                            self.emit_line("}");
+                
+                            self.indent();
+                            self.emit_line(&format!("while {} {{", else_name));
+                            self.indent_level += 1;
+                            for s in else_stmts {
+                                self.gen_stmt(s, false);
+                            }
+                            self.emit_set(&else_name, "0");
+                            self.indent_level -= 1;
+                            self.indent();
+                            self.emit_line("}");
+                        } else {
+                            self.indent();
+                            self.emit_line(&format!("while {} {{", cond_name));
+                            self.indent_level += 1;
+                            for s in then_branch {
+                                self.gen_stmt(s, false);
+                            }
+                            self.emit_set(&cond_name, "0");
+                            self.indent_level -= 1;
+                            self.indent();
+                            self.emit_line("}");
+                        }
+                    }
+                }
+            },
+            Stmt::Group(stmts) => {
+                self.push_scope();
+                for s in stmts {
+                    self.gen_stmt(s, false);
+                }
+                self.pop_scope();
+            },
+            Stmt::Increment { name } => {
+                let folded = Expr::BinaryOp {
+                    left: Box::new(Expr::Variable(name.clone())),
+                    op: Token::Plus,
+                    right: Box::new(Expr::Number(1)),
                 };
-
-                if cond_val {
-                    for s in then_branch {
-                        self.gen_stmt(s, false);
+                // Determine if 'name' is physical or virtual
+                if self.get_variable(&name).is_some() {
+                    if self.native_loop_depth > 0 {
+                        eprintln!("WARNING: Modifying virtual variable '{}' inside a native loop. This value will not update in the generated BFO.", name);
                     }
-                } else if let Some(else_stmts) = else_branch {
-                    for s in else_stmts {
-                        self.gen_stmt(s, false);
+                    self.set_variable(&name, folded);
+                } else {
+                    self.materialize_to_cell(&name, folded);
+                }
+            },
+            Stmt::Decrement { name } => {
+                let folded = Expr::BinaryOp {
+                    left: Box::new(Expr::Variable(name.clone())),
+                    op: Token::Minus,
+                    right: Box::new(Expr::Number(1)),
+                };
+                // Determine if 'name' is physical or virtual
+                if self.get_variable(&name).is_some() {
+                    if self.native_loop_depth > 0 {
+                        eprintln!("WARNING: Modifying virtual variable '{}' inside a native loop. This value will not update in the generated BFO.", name);
                     }
+                    self.set_variable(&name, folded);
+                } else {
+                    self.materialize_to_cell(&name, folded);
                 }
             },
         }
@@ -491,7 +645,7 @@ impl BFOGenerator {
             },
             Expr::BoolLiteral(b) => self.emit(&format!("{}", if b { 1 } else { 0 })),
             Expr::Variable(name) => {
-                if let Some(val) = self.variables.get(&name) {
+                if let Some(val) = self.get_variable(&name) {
                     // Recursively resolve in case of nested virtuals
                     self.gen_expr(val.clone());
                 } else {
@@ -575,7 +729,7 @@ impl BFOGenerator {
                 self.emit(&format!("{}", if b { 1 } else { 0 }));
             },
             Expr::Variable(name) => {
-                if let Some(val) = self.variables.get(&name) {
+                if let Some(val) = self.get_variable(&name) {
                     // Recursively resolve to literal
                     self.gen_expr_simple(val.clone());
                 } else {
@@ -631,82 +785,88 @@ impl BFOGenerator {
     }
 
     fn optimize_program(&mut self, program: Program) -> Program {
-        // Optimization: Fold int variables into cell variables when possible
-        // Since only cell can be used for I/O, int variables are just intermediate
-        
         let mut optimized_stmts = Vec::new();
         let mut var_values: HashMap<String, Expr> = HashMap::new();
         let mut var_types: HashMap<String, Type> = HashMap::new();
         
         for stmt in program.statements {
-            match stmt {
-                Stmt::VarDecl { var_type, name, value } => {
-                    // Track variable values for folding
-                    var_types.insert(name.clone(), var_type.clone());
-                    
-                    // Try to evaluate the expression with known values
-                    let folded_value = self.fold_expr(value, &var_values);
-                    
-                    // If this is a virtual scalar variable with a constant value, just track it
-                if var_type.is_virtual() {
-                    match &folded_value {
-                        Expr::Number(_) | Expr::CharLiteral(_) | Expr::BoolLiteral(_) => {
-                            var_values.insert(name.clone(), folded_value.clone());
-                            self.variables.insert(name.clone(), folded_value);
-                            // Don't emit this variable yet - it's virtual and silent
-                            continue;
-                        },
-                        _ => {}
-                    }
-                }
-                    
-                    // If this is a cell variable, fold any int dependencies
-                    if var_type == Type::Cell {
-                        let final_value = self.fold_expr(folded_value, &var_values);
-                        optimized_stmts.push(Stmt::VarDecl {
-                            var_type,
-                            name: name.clone(),
-                            value: final_value,
-                        });
-                        var_values.insert(name.clone(), Expr::Variable(name));
-                        continue;
-                    }
-                    
-                    // Otherwise keep the statement
-                    var_values.insert(name.clone(), folded_value.clone());
-                    optimized_stmts.push(Stmt::VarDecl {
-                        var_type,
-                        name,
-                        value: folded_value,
-                    });
-                },
-                Stmt::FuncDecl { .. } => {
-                    // Functions are kept as-is
-                    optimized_stmts.push(stmt);
-                },
-                _ => {
-                    // Other statements kept as-is
-                    optimized_stmts.push(stmt);
-                }
-            }
+            self.optimize_stmt_recursive(stmt, &mut optimized_stmts, &mut var_values, &mut var_types);
         }
         
         Program { statements: optimized_stmts }
     }
 
-    fn fold_expr(&self, expr: Expr, var_values: &HashMap<String, Expr>) -> Expr {
+    fn optimize_stmt_recursive(&mut self, stmt: Stmt, optimized_stmts: &mut Vec<Stmt>, var_values: &mut HashMap<String, Expr>, var_types: &mut HashMap<String, Type>) {
+        match stmt {
+            Stmt::Group(stmts) => {
+                for s in stmts {
+                    self.optimize_stmt_recursive(s, optimized_stmts, var_values, var_types);
+                }
+            },
+            Stmt::VarDecl { var_type, name, value } => {
+                // Track variable values for folding in current scope
+                var_types.insert(name.clone(), var_type.clone());
+                
+                // Try to evaluate the expression with known values
+                let folded_value = self.fold_expr(value);
+                
+                // If this is a virtual scalar variable with a constant value, just track it
+                if var_type.is_virtual() {
+                    match &folded_value {
+                        Expr::Number(_) | Expr::CharLiteral(_) | Expr::BoolLiteral(_) => {
+                            var_values.insert(name.clone(), folded_value.clone());
+                            self.set_variable(&name, folded_value);
+                            // Don't emit this variable yet - it's virtual and silent
+                            return;
+                        },
+                        _ => {}
+                    }
+                }
+                
+                // If this is a cell variable, fold any int dependencies
+                if var_type == Type::Cell {
+                    let final_value = self.fold_expr(folded_value);
+                    optimized_stmts.push(Stmt::VarDecl {
+                        var_type,
+                        name: name.clone(),
+                        value: final_value,
+                    });
+                    var_values.insert(name.clone(), Expr::Variable(name));
+                    return;
+                }
+                
+                // Otherwise keep the statement
+                var_values.insert(name.clone(), folded_value.clone());
+                optimized_stmts.push(Stmt::VarDecl {
+                    var_type,
+                    name,
+                    value: folded_value,
+                });
+            },
+            Stmt::FuncDecl { .. } => {
+                // Functions are kept as-is
+                optimized_stmts.push(stmt);
+            },
+            _ => {
+                // Other statements kept as-is
+                optimized_stmts.push(stmt);
+            }
+        }
+    }
+
+    fn fold_expr(&self, expr: Expr) -> Expr {
         match expr {
             Expr::Variable(name) => {
-                // Substitute variable with its value if known
-                if let Some(value) = var_values.get(&name) {
-                    value.clone()
+                // Substitute variable with its value if known (search scope stack)
+                if let Some(value) = self.get_variable(&name) {
+                    value
                 } else {
                     Expr::Variable(name)
                 }
             },
             Expr::BinaryOp { left, op, right } => {
-                let left_folded = self.fold_expr(*left, var_values);
-                let right_folded = self.fold_expr(*right, var_values);
+                let left_folded = self.fold_expr(*left);
+                let right_folded = self.fold_expr(*right);
                 
                 // Helper to get numeric value of Number or CharLiteral or BoolLiteral
                 let to_num = |e: &Expr| match e {
@@ -721,6 +881,23 @@ impl BFOGenerator {
                     match op {
                         Token::Plus => return Expr::Number(l + r),
                         Token::Minus => return Expr::Number(l - r),
+                        Token::Star => return Expr::Number(l * r),
+                        Token::Slash => {
+                            if r == 0 { panic!("Division by zero in constant folding"); }
+                            return Expr::Number(l / r);
+                        },
+                        Token::Percent => {
+                            if r == 0 { panic!("Modulo by zero in constant folding"); }
+                            return Expr::Number(l % r);
+                        },
+                        Token::DoubleEquals => return Expr::BoolLiteral(l == r),
+                        Token::NotEquals => return Expr::BoolLiteral(l != r),
+                        Token::Less => return Expr::BoolLiteral(l < r),
+                        Token::LessEqual => return Expr::BoolLiteral(l <= r),
+                        Token::Greater => return Expr::BoolLiteral(l > r),
+                        Token::GreaterEqual => return Expr::BoolLiteral(l >= r),
+                        Token::AndAnd => return Expr::BoolLiteral((l != 0) && (r != 0)),
+                        Token::OrOr => return Expr::BoolLiteral((l != 0) || (r != 0)),
                         _ => {}
                     }
                 }
@@ -733,8 +910,8 @@ impl BFOGenerator {
                 }
             },
             Expr::ArrayAccess { array, index } => {
-                let array_folded = self.fold_expr(*array, var_values);
-                let index_folded = self.fold_expr(*index, var_values);
+                let array_folded = self.fold_expr(*array);
+                let index_folded = self.fold_expr(*index);
 
                 if let Expr::Number(i) = &index_folded {
                     match &array_folded {
@@ -767,7 +944,7 @@ impl BFOGenerator {
                 }
             },
             Expr::MemberAccess { object, member } => {
-                let object_folded = self.fold_expr(*object, var_values);
+                let object_folded = self.fold_expr(*object);
                 if member == "length" {
                     match &object_folded {
                         Expr::StringLiteral(s) => return Expr::Number(s.len() as i32),
@@ -789,86 +966,6 @@ impl BFOGenerator {
         }
     }
 
-    fn can_optimize_for_loop(&self, init: &Stmt, condition: &Expr, update: &Stmt) -> Option<(String, i32)> {
-        // Pattern: for (int i = 0; i < n; i++)
-        // Returns: Some((var_name, n)) if pattern matches
-        
-        // Check init: int i = 0
-        let var_name = if let Stmt::VarDecl { var_type: _, name, value } = init {
-            if let Expr::Number(0) = value {
-                name.clone()
-            } else {
-                return None;
-            }
-        } else {
-            return None;
-        };
-        
-        // Check condition: i < n OR i < arr.length
-        let limit = if let Expr::BinaryOp { left, op, right } = condition {
-            if *op != Token::Less {
-                return None;
-            }
-            if let Expr::Variable(cond_var) = left.as_ref() {
-                if cond_var != &var_name {
-                    return None;
-                }
-            } else {
-                return None;
-            }
-            
-            match right.as_ref() {
-                Expr::Number(n) => *n,
-                Expr::MemberAccess { object, member } => {
-                    if member == "length" {
-                        match object.as_ref() {
-                            Expr::Variable(array_name) => {
-                                if let Some((_, len, _, _)) = self.arrays.get(array_name) {
-                                    *len as i32
-                                } else {
-                                    return None;
-                                }
-                            },
-                            Expr::StringLiteral(s) => s.len() as i32,
-                            Expr::ArrayLiteral(elements) => elements.len() as i32,
-                            _ => return None,
-                        }
-                    } else {
-                        return None;
-                    }
-                },
-                _ => return None,
-            }
-        } else {
-            return None;
-        };
-        
-        // Check update: i++ (which is i = i + 1)
-        if let Stmt::Assign { name: update_var, value } = update {
-            if update_var != &var_name {
-                return None;
-            }
-            if let Expr::BinaryOp { left, op, right } = value {
-                if *op != Token::Plus {
-                    return None;
-                }
-                if let Expr::Variable(left_var) = left.as_ref() {
-                    if left_var != &var_name {
-                        return None;
-                    }
-                } else {
-                    return None;
-                }
-                if let Expr::Number(1) = right.as_ref() {
-                    // Pattern matches!
-                    return Some((var_name, limit));
-                }
-            }
-        }
-        
-        None
-    }
-
     fn is_predictable_function(&self, params: &[(Type, String)]) -> bool {
         // Functions with virtual parameters (int, char) or arrays are inlined.
         // This allows 'Always-Virtual' folding to resolve arithmetic at call sites.
@@ -882,147 +979,33 @@ impl BFOGenerator {
     }
 
     fn inline_function(&mut self, params: Vec<(Type, String)>, args: Vec<Expr>, body: Vec<Stmt>) {
-        let mut inlined_body = body;
-        
-        // Substitute each parameter with its argument
+        // 1. Evaluate arguments in CURRENT scope
+        let mut evaluated_args = Vec::new();
+        for arg in args {
+            evaluated_args.push(self.fold_expr(arg));
+        }
+
+        // 2. Push NEW scope for the function body
+        self.push_scope();
+
+        // 3. Initialize parameters
         for (i, (_, param_name)) in params.iter().enumerate() {
-            if let Some(arg) = args.get(i) {
-                // If the argument is a literal, we can do direct substitution
-                // For now, let's treat variables and literals similarly in substitution
-                let mut new_body = Vec::new();
-                for stmt in inlined_body {
-                    new_body.push(self.substitute_stmt_with_expr(stmt, param_name, arg.clone()));
-                }
-                inlined_body = new_body;
+            if let Some(arg) = evaluated_args.get(i) {
+                self.set_variable(param_name, arg.clone());
             }
         }
-        
-        // Generate code for the substituted body
-        for stmt in inlined_body {
+
+        // 4. Generate code for the body
+        for stmt in body {
             self.gen_stmt(stmt, false);
         }
+
+        // 5. Pop scope
+        self.pop_scope();
     }
 
-    fn substitute_stmt_with_expr(&self, stmt: Stmt, var_name: &str, replacement: Expr) -> Stmt {
-        match stmt {
-            Stmt::VarDecl { var_type, name, value: expr } => Stmt::VarDecl {
-                var_type,
-                name,
-                value: self.substitute_expr_with_expr(expr, var_name, replacement),
-            },
-            Stmt::Assign { name, value: expr } => Stmt::Assign {
-                name,
-                value: self.substitute_expr_with_expr(expr, var_name, replacement),
-            },
-            Stmt::IndexedAssign { name, index, value: expr } => Stmt::IndexedAssign {
-                name,
-                index: self.substitute_expr_with_expr(index, var_name, replacement.clone()),
-                value: self.substitute_expr_with_expr(expr, var_name, replacement),
-            },
-            Stmt::Putc(expr) => Stmt::Putc(self.substitute_expr_with_expr(expr,var_name, replacement)),
-            Stmt::Forn { name, count, body } => Stmt::Forn {
-                name,
-                count: self.substitute_expr_with_expr(count, var_name, replacement.clone()),
-                body: body.into_iter().map(|s| self.substitute_stmt_with_expr(s, var_name, replacement.clone())).collect(),
-            },
-            Stmt::While { condition, body } => Stmt::While {
-                condition: self.substitute_expr_with_expr(condition, var_name, replacement.clone()),
-                body: body.into_iter().map(|s| self.substitute_stmt_with_expr(s, var_name, replacement.clone())).collect(),
-            },
-            Stmt::For { init, condition, update, body } => Stmt::For {
-                init: Box::new(self.substitute_stmt_with_expr(*init, var_name, replacement.clone())),
-                condition: self.substitute_expr_with_expr(condition, var_name, replacement.clone()),
-                update: Box::new(self.substitute_stmt_with_expr(*update, var_name, replacement.clone())),
-                body: body.into_iter().map(|s| self.substitute_stmt_with_expr(s, var_name, replacement.clone())).collect(),
-            },
-            Stmt::ExprStmt(expr) => Stmt::ExprStmt(self.substitute_expr_with_expr(expr, var_name, replacement)),
-            _ => stmt,
-        }
-    }
-
-    fn substitute_expr_with_expr(&self, expr: Expr, var_name: &str, replacement: Expr) -> Expr {
-        match expr {
-            Expr::Variable(name) => {
-                if name == var_name {
-                    replacement
-                } else {
-                    Expr::Variable(name)
-                }
-            },
-            Expr::StringLiteral(_) | Expr::CharLiteral(_) | Expr::Number(_) => expr,
-            Expr::BinaryOp { left, op, right } => Expr::BinaryOp {
-                left: Box::new(self.substitute_expr_with_expr(*left, var_name, replacement.clone())),
-                op,
-                right: Box::new(self.substitute_expr_with_expr(*right, var_name, replacement)),
-            },
-            Expr::ArrayAccess { array, index } => Expr::ArrayAccess {
-                array: Box::new(self.substitute_expr_with_expr(*array, var_name, replacement.clone())),
-                index: Box::new(self.substitute_expr_with_expr(*index, var_name, replacement)),
-            },
-            Expr::MemberAccess { object, member } => Expr::MemberAccess {
-                object: Box::new(self.substitute_expr_with_expr(*object, var_name, replacement)),
-                member,
-            },
-            Expr::FunctionCall { name, args } => Expr::FunctionCall {
-                name,
-                args: args.into_iter().map(|a| self.substitute_expr_with_expr(a, var_name, replacement.clone())).collect(),
-            },
-            _ => expr,
-        }
-    }
-    fn substitute_stmt(&self, stmt: Stmt, var_name: &str, value: i32) -> Stmt {
-        match stmt {
-            Stmt::VarDecl { var_type, name, value: expr } => Stmt::VarDecl {
-                var_type,
-                name,
-                value: self.substitute_expr(expr, var_name, value),
-            },
-            Stmt::Assign { name, value: expr } => Stmt::Assign {
-                name,
-                value: self.substitute_expr(expr, var_name, value),
-            },
-            Stmt::IndexedAssign { name, index, value: expr } => Stmt::IndexedAssign {
-                name,
-                index: self.substitute_expr(index, var_name, value),
-                value: self.substitute_expr(expr, var_name, value),
-            },
-            Stmt::Putc(expr) => Stmt::Putc(self.substitute_expr(expr, var_name, value)),
-            Stmt::Forn { name, count, body } => Stmt::Forn {
-                name,
-                count: self.substitute_expr(count, var_name, value),
-                body: body.into_iter().map(|s| self.substitute_stmt(s, var_name, value)).collect(),
-            },
-            Stmt::While { condition, body } => Stmt::While {
-                condition: self.substitute_expr(condition, var_name, value),
-                body: body.into_iter().map(|s| self.substitute_stmt(s, var_name, value)).collect(),
-            },
-            Stmt::ExprStmt(expr) => Stmt::ExprStmt(self.substitute_expr(expr, var_name, value)),
-            _ => stmt,
-        }
-    }
-
-    fn substitute_expr(&self, expr: Expr, var_name: &str, value: i32) -> Expr {
-        match expr {
-            Expr::Variable(name) if name == var_name => Expr::Number(value),
-            Expr::CharLiteral(_) | Expr::StringLiteral(_) | Expr::Number(_) => expr,
-            Expr::BinaryOp { left, op, right } => Expr::BinaryOp {
-                left: Box::new(self.substitute_expr(*left, var_name, value)),
-                op,
-                right: Box::new(self.substitute_expr(*right, var_name, value)),
-            },
-            Expr::ArrayAccess { array, index } => Expr::ArrayAccess {
-                array: Box::new(self.substitute_expr(*array, var_name, value)),
-                index: Box::new(self.substitute_expr(*index, var_name, value)),
-            },
-            Expr::MemberAccess { object, member } => Expr::MemberAccess {
-                object: Box::new(self.substitute_expr(*object, var_name, value)),
-                member,
-            },
-            Expr::FunctionCall { name, args } => Expr::FunctionCall {
-                name,
-                args: args.into_iter().map(|a| self.substitute_expr(a, var_name, value)).collect(),
-            },
-            _ => expr,
-        }
+    fn get_var_type(&self, _name: &str) -> Option<Type> {
+        // ... this might need scoping too if types can change, but usually they don't in HBF
+        None
     }
 }

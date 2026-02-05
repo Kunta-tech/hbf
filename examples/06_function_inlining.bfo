@@ -13,3 +13,4 @@ func main() {
     print 'T'
     print '\n'
 }
+main()

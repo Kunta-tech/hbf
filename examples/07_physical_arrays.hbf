@@ -10,3 +10,4 @@ void main() {
     putc(vals[2]); // 'C'
     putc('\n');
 }
+main();

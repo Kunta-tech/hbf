@@ -4,6 +4,12 @@ mod lexer;
 mod ast;
 mod parser;
 mod bfo_gen;
+mod bfo_lexer;
+mod bfo_parser;
+mod bfo_ast;
+mod bfo_compiler;
+mod ir;
+mod codegen;
 
 use std::env;
 use std::fs;
@@ -34,8 +40,12 @@ fn main() {
                 eprintln!("Usage: hbf build <file.hbf>");
                 return;
             }
-            compile_to_bfo(&args[2]);
-            println!("BF generation not yet implemented");
+            if !args[2].ends_with(".hbf") {
+                eprintln!("Error: 'build' command only supports .hbf files.");
+                return;
+            }
+            let bfo_filename = compile_to_bfo(&args[2]);
+            build_bf(&bfo_filename);
         },
         "test-all" => {
             compile_all_examples();
@@ -44,6 +54,30 @@ fn main() {
             eprintln!("Unknown command: {}", command);
         }
     }
+}
+
+fn build_bf(bfo_filename: &str) {
+    let bfo_source = fs::read_to_string(bfo_filename).expect("Failed to read BFO file");
+
+    // 1. Lex BFO
+    let bfo_lexer = bfo_lexer::BFOLexer::new(&bfo_source);
+
+    // 2. Parse BFO
+    let mut bfo_parser = bfo_parser::BFOParser::new(bfo_lexer);
+    let bfo_program = bfo_parser.parse();
+
+    // 3. Compile BFO to IR
+    let mut bfo_compiler = bfo_compiler::BFOCompiler::new();
+    let instructions = bfo_compiler.compile(bfo_program);
+
+    // 4. Codegen IR to BF
+    let mut bf_codegen = codegen::Codegen::new();
+    let bf_code = bf_codegen.generate(&instructions);
+
+    // 5. Write BF file
+    let bf_filename = bfo_filename.replace(".bfo", ".bf");
+    fs::write(&bf_filename, bf_code).expect("Failed to write BF file");
+    println!("Generated BF: {}", bf_filename);
 }
 
 fn compile_all_examples() {
@@ -56,7 +90,8 @@ fn compile_all_examples() {
             if path.extension().map_or(false, |ext| ext == "hbf") {
                 if let Some(path_str) = path.to_str() {
                     println!("Testing {}", path_str);
-                    compile_to_bfo(path_str);
+                    let bfo_file = compile_to_bfo(path_str);
+                    build_bf(&bfo_file);
                 }
             }
         }
@@ -64,7 +99,7 @@ fn compile_all_examples() {
     println!("Batch compilation complete.");
 }
 
-fn compile_to_bfo(filename: &str) {
+fn compile_to_bfo(filename: &str) -> String {
     let source = fs::read_to_string(filename).expect("Failed to read file");
 
     // Lex
@@ -82,4 +117,5 @@ fn compile_to_bfo(filename: &str) {
     let bfo_filename = filename.replace(".hbf", ".bfo");
     fs::write(&bfo_filename, bfo_code).expect("Failed to write BFO file");
     println!("Generated BFO: {}", bfo_filename);
+    bfo_filename
 }

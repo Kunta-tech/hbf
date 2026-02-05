@@ -1,11 +1,12 @@
 func main() {
-    set vals_1 65
-    set vals_2 66
-    set vals_3 67
-    set vals_1 0
-    add vals_1 vals_3
-    print vals_1
-    print vals_2
-    print vals_3
+    set __hbf_cell_vals_0 65
+    set __hbf_cell_vals_1 66
+    set __hbf_cell_vals_2 67
+    set __hbf_cell_vals_0 0
+    add __hbf_cell_vals_0 __hbf_cell_vals_2
+    print __hbf_cell_vals_0
+    print __hbf_cell_vals_1
+    print __hbf_cell_vals_2
     print '\n'
 }
+main()

@@ -27,24 +27,33 @@ pub enum Token {
     CharLiteral(char),
     
     // Operators
-    Plus,       // +
-    Minus,      // -
-    PlusPlus,   // ++
-    MinusMinus, // --
-    Less,       // <
-    Greater,    // >
-    Equals,     // =
+    Plus,           // +
+    Minus,          // -
+    Star,           // *
+    Slash,          // /
+    Percent,        // %
+    PlusPlus,       // ++
+    MinusMinus,     // --
+    Less,           // <
+    LessEqual,      // <=
+    Greater,        // >
+    GreaterEqual,   // >=
+    DoubleEquals,   // ==
+    NotEquals,      // !=
+    AndAnd,         // &&
+    OrOr,           // ||
+    Equals,         // =
     
     // Delimiters
-    LParen,     // (
-    RParen,     // )
-    LBrace,     // {
-    RBrace,     // }
-    LBracket,   // [
-    RBracket,   // ]
-    Semicolon,  // ;
-    Comma,      // ,
-    Dot,        // .
+    LParen,         // (
+    RParen,         // )
+    LBrace,         // {
+    RBrace,         // }
+    LBracket,       // [
+    RBracket,       // ]
+    Semicolon,      // ;
+    Comma,          // ,
+    Dot,            // .
     
     // Meta
     EOF,

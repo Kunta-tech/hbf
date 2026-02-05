@@ -9,3 +9,4 @@ void main() {
     print_digit(2); // '2'
     putc('\n');
 }
+main();

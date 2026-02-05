@@ -51,11 +51,10 @@ impl<'a> Parser<'a> {
                         // It's a function
                         panic!("Non-void functions not yet supported");
                     } else {
-                        // It's a variable declaration
-                        self.eat(Token::Equals);
-                        let value = self.parse_expr();
+                        // It's a variable declaration (or list of them)
+                        let stmt = self.parse_var_list(var_type, Some(name_clone));
                         self.eat(Token::Semicolon);
-                        Stmt::VarDecl { var_type, name: name_clone, value }
+                        stmt
                     }
                 } else {
                     panic!("Expected identifier after type");
@@ -83,6 +82,24 @@ impl<'a> Parser<'a> {
                             }
                         },
                         _ => panic!("Invalid assignment target"),
+                    }
+                } else if self.current_token == Token::PlusPlus {
+                    match expr {
+                        Expr::Variable(var_name) => {
+                            self.eat(Token::PlusPlus);
+                            self.eat(Token::Semicolon);
+                            Stmt::Increment { name: var_name }
+                        }
+                        _ => panic!("++ can only be applied to variables"),
+                    }
+                } else if self.current_token == Token::MinusMinus {
+                    match expr {
+                        Expr::Variable(var_name) => {
+                            self.eat(Token::MinusMinus);
+                            self.eat(Token::Semicolon);
+                            Stmt::Decrement { name: var_name }
+                        }
+                        _ => panic!("-- can only be applied to variables"),
                     }
                 } else {
                     self.eat(Token::Semicolon);
@@ -164,14 +181,66 @@ impl<'a> Parser<'a> {
         };
         self.advance();
         
-        // Handle array brackets: type[]
-        if self.current_token == Token::LBracket {
+        // Handle Java-style array type syntax: type[] a;
+        while self.current_token == Token::LBracket {
             self.eat(Token::LBracket);
             self.eat(Token::RBracket);
             t = Type::Array(Box::new(t));
         }
         
         t
+    }
+
+    // Helper to parse comma-separated variable list: type a, b=1, c[] ...
+    fn parse_var_list(&mut self, base_type: Type, mut first_name: Option<String>) -> Stmt {
+        let mut stmts = Vec::new();
+        
+        loop {
+            let name = if let Some(n) = first_name.take() {
+                n
+            } else {
+                if let Token::Identifier(n) = &self.current_token {
+                    let n = n.clone();
+                    self.advance();
+                    n
+                } else {
+                    panic!("Expected variable name");
+                }
+            };
+            
+            // Handle C-style array syntax: type a[];
+            let mut current_type = base_type.clone();
+            while self.current_token == Token::LBracket {
+                self.eat(Token::LBracket);
+                self.eat(Token::RBracket);
+                current_type = Type::Array(Box::new(current_type));
+            }
+
+            let value = if self.current_token == Token::Equals {
+                self.eat(Token::Equals);
+                self.parse_expr()
+            } else {
+                // Default initialization
+                match &current_type {
+                    Type::Array(_) => Expr::ArrayLiteral(vec![]), // Default empty array
+                    _ => Expr::Number(0),
+                }
+            };
+            
+            stmts.push(Stmt::VarDecl { var_type: current_type, name, value });
+            
+            if self.current_token == Token::Comma {
+                self.eat(Token::Comma);
+            } else {
+                break;
+            }
+        }
+        
+        if stmts.len() == 1 {
+            stmts.pop().unwrap()
+        } else {
+            Stmt::Group(stmts)
+        }
     }
 
     fn parse_if(&mut self) -> Stmt {
@@ -235,6 +304,7 @@ impl<'a> Parser<'a> {
                 
                 // Save current state for simpler handling
                 let expr = self.parse_expr();
+                
                 if self.current_token == Token::Equals {
                     match expr {
                         Expr::Variable(var_name) => {
@@ -255,6 +325,24 @@ impl<'a> Parser<'a> {
                         },
                         _ => panic!("Invalid assignment target"),
                     }
+                } else if self.current_token == Token::PlusPlus {
+                    match expr {
+                        Expr::Variable(var_name) => {
+                            self.eat(Token::PlusPlus);
+                            self.eat(Token::Semicolon);
+                            Stmt::Increment { name: var_name }
+                        }
+                        _ => panic!("++ can only be applied to variables"),
+                    }
+                } else if self.current_token == Token::MinusMinus {
+                    match expr {
+                        Expr::Variable(var_name) => {
+                            self.eat(Token::MinusMinus);
+                            self.eat(Token::Semicolon);
+                            Stmt::Decrement { name: var_name }
+                        }
+                        _ => panic!("-- can only be applied to variables"),
+                    }
                 } else {
                     // Was a function call or just an expression statement
                     self.eat(Token::Semicolon);
@@ -267,29 +355,40 @@ impl<'a> Parser<'a> {
 
     fn parse_var_decl(&mut self) -> Stmt {
         let var_type = self.parse_type();
-        let name = if let Token::Identifier(n) = &self.current_token {
-            n.clone()
-        } else {
-            panic!("Expected variable name");
-        };
-        self.advance();
-        self.eat(Token::Equals);
-        let value = self.parse_expr();
+        let stmt = self.parse_var_list(var_type, None);
         self.eat(Token::Semicolon);
-        Stmt::VarDecl { var_type, name, value }
+        stmt
     }
 
     fn parse_for(&mut self) -> Stmt {
         self.eat(Token::For);
         self.eat(Token::LParen);
         
-        let init = Box::new(self.parse_var_decl_no_semi());
+        let init = if self.current_token == Token::Semicolon {
+            None
+        } else {
+            // Check if it's a declaration or assignment
+            match &self.current_token {
+                Token::Int | Token::Cell | Token::Bool | Token::Char | Token::String => {
+                    Some(Box::new(self.parse_var_decl_no_semi()))
+                },
+                _ => Some(Box::new(self.parse_assignment_no_semi())),
+            }
+        };
         self.eat(Token::Semicolon);
         
-        let condition = self.parse_expr();
+        let condition = if self.current_token == Token::Semicolon {
+            None
+        } else {
+            Some(self.parse_expr())
+        };
         self.eat(Token::Semicolon);
         
-        let update = Box::new(self.parse_assignment_no_semi());
+        let update = if self.current_token == Token::RParen {
+            None
+        } else {
+            Some(Box::new(self.parse_assignment_no_semi()))
+        };
         self.eat(Token::RParen);
         
         self.eat(Token::LBrace);
@@ -306,15 +405,6 @@ impl<'a> Parser<'a> {
         self.eat(Token::Forn);
         self.eat(Token::LParen);
         
-        // Match forn(int i = 0);
-        let _var_type = self.parse_type();
-        let name = if let Token::Identifier(n) = &self.current_token {
-            n.clone()
-        } else {
-            panic!("Expected loop variable name");
-        };
-        self.advance();
-        self.eat(Token::Equals);
         let count = self.parse_expr();
         self.eat(Token::RParen);
         
@@ -325,20 +415,12 @@ impl<'a> Parser<'a> {
         }
         self.eat(Token::RBrace);
         
-        Stmt::Forn { name, count, body }
+        Stmt::Forn { count, body }
     }
 
     fn parse_var_decl_no_semi(&mut self) -> Stmt {
         let var_type = self.parse_type();
-        let name = if let Token::Identifier(n) = &self.current_token {
-            n.clone()
-        } else {
-            panic!("Expected variable name");
-        };
-        self.advance();
-        self.eat(Token::Equals);
-        let value = self.parse_expr();
-        Stmt::VarDecl { var_type, name, value }
+        self.parse_var_list(var_type, None)
     }
 
     fn parse_assignment_no_semi(&mut self) -> Stmt {
@@ -403,13 +485,64 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> Expr {
-        self.parse_comparison()
+        self.parse_logical_or()
+    }
+
+    fn parse_logical_or(&mut self) -> Expr {
+        let mut left = self.parse_logical_and();
+        
+        while self.current_token == Token::OrOr {
+            let op = self.current_token.clone();
+            self.advance();
+            let right = self.parse_logical_and();
+            left = Expr::BinaryOp {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+        
+        left
+    }
+
+    fn parse_logical_and(&mut self) -> Expr {
+        let mut left = self.parse_equality();
+        
+        while self.current_token == Token::AndAnd {
+            let op = self.current_token.clone();
+            self.advance();
+            let right = self.parse_equality();
+            left = Expr::BinaryOp {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+        
+        left
+    }
+
+    fn parse_equality(&mut self) -> Expr {
+        let mut left = self.parse_comparison();
+        
+        while self.current_token == Token::DoubleEquals || self.current_token == Token::NotEquals {
+            let op = self.current_token.clone();
+            self.advance();
+            let right = self.parse_comparison();
+            left = Expr::BinaryOp {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+        
+        left
     }
 
     fn parse_comparison(&mut self) -> Expr {
         let mut left = self.parse_additive();
         
-        while self.current_token == Token::Less || self.current_token == Token::Greater {
+        while matches!(self.current_token, Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual) {
             let op = self.current_token.clone();
             self.advance();
             let right = self.parse_additive();
@@ -424,9 +557,26 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_additive(&mut self) -> Expr {
-        let mut left = self.parse_postfix();
+        let mut left = self.parse_multiplicative();
         
         while self.current_token == Token::Plus || self.current_token == Token::Minus {
+            let op = self.current_token.clone();
+            self.advance();
+            let right = self.parse_multiplicative();
+            left = Expr::BinaryOp {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+        
+        left
+    }
+
+    fn parse_multiplicative(&mut self) -> Expr {
+        let mut left = self.parse_postfix();
+        
+        while matches!(self.current_token, Token::Star | Token::Slash | Token::Percent) {
             let op = self.current_token.clone();
             self.advance();
             let right = self.parse_postfix();

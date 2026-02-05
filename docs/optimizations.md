@@ -40,6 +40,23 @@ putc(result);
 print 49
 ```
 
+### Compile-Time If/Else Evaluation
+The compiler evaluates `if` conditions at compile time if the condition consists of virtual variables or literals. This results in dead-code elimination where only the active branch is generated.
+
+**HBF:**
+```c
+bool debug = false;
+if (debug) {
+    putc('D');
+}
+putc('!');
+```
+
+**BFO:**
+```
+print '!'      ; 'D' branch eliminated at compile-time
+```
+
 ---
 
 ## 2. Loop Unrolling
@@ -75,17 +92,17 @@ For runtime-variable iteration counts, HBF provides the `forn` construct which g
 
 **HBF:**
 ```c
-forn(cell n = 10) {
+forn(10) {
     putc('B');
 }
 ```
 
 **Resulting BFO (native countdown):**
 ```
-set n 10
-while n {
+set _forn_0 10
+while _forn_0 {
     print 'B'
-    sub n 1
+    sub _forn_0 1
 }
 ```
 

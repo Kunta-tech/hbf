@@ -10,3 +10,4 @@ void main() {
     print_str(" is ");
     print_str("FAST\n");
 }
+main();

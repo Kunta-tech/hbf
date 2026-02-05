@@ -55,6 +55,12 @@ pub enum Stmt {
         name: String,
         value: Expr,
     },
+    Increment {
+        name: String,
+    },
+    Decrement {
+        name: String,
+    },
     Assign {
         name: String,
         value: Expr,
@@ -72,13 +78,12 @@ pub enum Stmt {
     },
     Putc(Expr),
     For {
-        init: Box<Stmt>,
-        condition: Expr,
-        update: Box<Stmt>,
+        init: Option<Box<Stmt>>,
+        condition: Option<Expr>,
+        update: Option<Box<Stmt>>,
         body: Vec<Stmt>,
     },
     Forn {
-        name: String,
         count: Expr,
         body: Vec<Stmt>,
     },
@@ -91,6 +96,7 @@ pub enum Stmt {
         then_branch: Vec<Stmt>,
         else_branch: Option<Vec<Stmt>>,
     },
+    Group(Vec<Stmt>), // For grouping statements (like multi-var declaration) without scope
     ExprStmt(Expr), // For function calls as statements
 }
 

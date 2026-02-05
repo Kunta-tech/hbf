@@ -6,3 +6,4 @@ void main() {
     putc('o');
     putc('\n');
 }
+main();

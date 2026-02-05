@@ -42,22 +42,7 @@ impl<'a> BFOParser<'a> {
     fn parse_item(&mut self) -> BFOItem {
         match &self.current_token {
             BFOToken::Func => self.parse_function(),
-            BFOToken::Set => {
-                // Global set
-                self.advance();
-                let name = self.parse_identifier();
-                let value = self.parse_value();
-                BFOItem::GlobalSet { name, value }
-            }
-            BFOToken::Identifier(_) => {
-                // Function call
-                let name = self.parse_identifier();
-                self.eat(BFOToken::LParen);
-                let args = self.parse_args();
-                self.eat(BFOToken::RParen);
-                BFOItem::FunctionCall { name, args }
-            }
-            _ => panic!("Unexpected token at top level: {:?}", self.current_token),
+            _ => BFOItem::Statement(self.parse_stmt()),
         }
     }
 

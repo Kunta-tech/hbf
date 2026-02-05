@@ -8,3 +8,4 @@ void main() {
     putc(c); // 'B'
     putc('\n');
 }
+main();

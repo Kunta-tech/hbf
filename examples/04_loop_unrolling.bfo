@@ -4,3 +4,4 @@ func main() {
     print 'O'
     print '\n'
 }
+main()

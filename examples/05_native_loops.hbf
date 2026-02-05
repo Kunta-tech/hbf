@@ -2,9 +2,10 @@ void main() {
     cell count = 5;
     
     // Generates a native BFO while loop (countdown)
-    forn(cell i = count) {
+    forn(count) {
         putc('*');
-        // Loop counter 'i' is automatically decremented in 'forn'
+        // Loop counter is automatically managed in 'forn'
     }
     putc('\n');
 }
+main();

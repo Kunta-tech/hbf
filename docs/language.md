@@ -31,6 +31,18 @@ cell c = 65;
 - Function parameters are local to the function.
 - Global/Top-level variables are accessible everywhere.
 
+### Multi-Variable Declaration
+Multiple variables of the same type can be declared in a single statement, separated by commas:
+```c
+int a, b = 12, c;
+```
+If an initializer is omitted, variables are automatically initialized to `0` (for scalars) or an empty literal `[]` (for arrays).
+
+### Flexible Array Syntax
+Arrays can be declared with brackets on either the type or the name:
+- **Java-style**: `int[] a, b;`
+- **C-style**: `int a[], b;` (Only `a` is an array)
+
 ## Literals & Strings
 
 ### Boolean Literals
@@ -66,6 +78,28 @@ for (int i = 0; i < s.length; i++) {
 }
 ```
 
+### while Loops
+Standard while loops are supported. For BFO generation, they usually match a physical `cell` or a simple virtual variable.
+```c
+cell c = 10;
+while (c) {
+    putc('!');
+    c = c - 1;
+}
+```
+
+### if / else Statements
+HBF supports compile-time evaluated `if`/`else` statements. The condition must be a virtual expression (resolvable at compile-time).
+```c
+bool flag = true;
+if (flag) {
+    putc('Y');
+} else {
+    putc('N');
+}
+```
+`else if` chains are also supported. Only the branch satisfying the condition is emitted to the output BFO.
+
 **Resulting BFO (Zero Footprint):**
 ```
 print 'H'
@@ -77,17 +111,17 @@ print 'i'
 For runtime-variable iteration counts, use `forn`:
 
 ```c
-forn(cell n = 10) {
+forn(10) {
     putc('B');
 }
 ```
 
 **Resulting BFO:**
 ```
-set n 10
-while n {
+set _forn_0 10
+while _forn_0 {
     print 'B'
-    sub n 1
+    sub _forn_0 1
 }
 ```
 

@@ -6,3 +6,4 @@ func main() {
     print 'o'
     print '\n'
 }
+main()
