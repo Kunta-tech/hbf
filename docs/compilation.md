@@ -40,7 +40,7 @@ The HBF compiler uses a multi-stage pipeline to transform high-level code into o
 │       ↓                                                       │
 │  Internal IR (ir.rs)          - Brainfuck Operations        │
 │       ↓                                                       │
-│  Codegen (hbf_codegen.rs)     - BF Character Generation     │
+│  Codegen (bf_codegen.rs)     - BF Character Generation     │
 │       ↓                                                       │
 │  Brainfuck (.bf)                                             │
 │                                                               │
@@ -267,7 +267,7 @@ print x
 
 ### 2.4 Brainfuck Generation
 
-**Module**: `hbf_codegen.rs`
+**Module**: `bf_codegen.rs`
 
 Expands IR to Brainfuck characters:
 

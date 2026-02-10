@@ -195,7 +195,7 @@ src/
 ├── bfo_parser.rs      - BFO parsing
 ├── bfo_compiler.rs    - BFO compilation
 ├── ir.rs              - Internal IR
-├── hbf_codegen.rs     - Brainfuck generation
+├── bf_codegen.rs     - Brainfuck generation
 └── main.rs            - CLI entry point
 ```
 

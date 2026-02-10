@@ -9,7 +9,7 @@ mod bfo_parser;
 mod bfo_ast;
 mod bfo_compiler;
 mod ir;
-mod hbf_codegen;
+mod bf_codegen;
 
 use std::env;
 use std::fs;
@@ -47,6 +47,17 @@ fn main() {
             let bfo_filename = compile_to_bfo(&args[2]);
             build_bf(&bfo_filename);
         },
+        "bf" => {
+            if args.len() < 3 {
+                eprintln!("Usage: hbf bf <file.bfo>");
+                return;
+            }
+            if !args[2].ends_with(".bfo") {
+                eprintln!("Error: 'bf' command only supports .bfo files.");
+                return;
+            }
+            build_bf(&args[2]);
+        },
         "test-all" => {
             compile_all_examples();
         },
@@ -71,7 +82,7 @@ fn build_bf(bfo_filename: &str) {
     let instructions = bfo_compiler.compile(bfo_program);
 
     // 4. Codegen IR to BF
-    let mut bf_codegen = hbf_codegen::Codegen::new();
+    let mut bf_codegen = bf_codegen::Codegen::new();
     let bf_code = bf_codegen.generate(&instructions);
 
     // 5. Write BF file

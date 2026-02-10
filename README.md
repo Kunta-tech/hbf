@@ -140,7 +140,7 @@ while (counter) {
 ┌─────────────┐
 │  BF IR      │  Internal representation
 └──────┬──────┘
-       │ hbf_codegen
+       │ bf_codegen
        ↓
 ┌─────────────┐
 │ Brainfuck   │  Final executable
@@ -168,7 +168,7 @@ src/
 ├── bfo_ast.rs         - BFO AST definitions
 ├── bfo_compiler.rs    - Compiles BFO to IR
 ├── ir.rs              - Internal representation
-├── hbf_codegen.rs     - Generates Brainfuck from IR
+├── bf_codegen.rs     - Generates Brainfuck from IR
 └── main.rs            - CLI entry point
 ```
 

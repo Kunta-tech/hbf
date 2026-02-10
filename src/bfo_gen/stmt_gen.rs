@@ -71,6 +71,7 @@ impl BFOGenerator {
                     }
                     self.set_variable(&name, folded);
                 } else {
+                    println!("Materializing variable {}: {:?}", name, folded);
                     self.materialize_to_cell(&name, folded, false);
                 }
             },
@@ -122,9 +123,11 @@ impl BFOGenerator {
                         }
             
                         // Otherwise fall back to materialization
-                        self.materialize_to_cell("__hbf_tmp", Expr::ArrayAccess { array, index }, false);
+                        self.materialize_to_cell("__hbf_tmp", Expr::ArrayAccess { array, index }, true);
                         self.indent();
                         self.emit_line("print __hbf_tmp");
+                        self.indent();
+                        self.emit_line("free __hbf_tmp");
                     },
                     Expr::Number(n) => {
                         self.indent();
@@ -151,9 +154,10 @@ impl BFOGenerator {
                     _ => {
                         // Complex expression materialization
                         // Use local 'tmp' cell for BFO printing
-                        self.materialize_to_cell("__hbf_tmp", folded, false);
+                        self.materialize_to_cell("__hbf_tmp", folded, true);
                         self.indent();
                         self.emit_line("print __hbf_tmp");
+                        self.indent();
                         self.emit_line("free __hbf_tmp");
                     }
                 }

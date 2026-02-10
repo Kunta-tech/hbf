@@ -18,7 +18,7 @@ graph TD
     BFOLexer --> BFOParser["BFO Parser<br/>(bfo_parser.rs)"]
     BFOParser --> BFOComp["BFO Compiler<br/>(bfo_compiler.rs)"]
     BFOComp --> IR["Internal IR<br/>(ir.rs)"]
-    IR --> Codegen["BF Codegen<br/>(hbf_codegen.rs)"]
+    IR --> Codegen["BF Codegen<br/>(bf_codegen.rs)"]
     Codegen --> BF[".bf Output"]
 ```
 
@@ -374,7 +374,7 @@ struct BFOCompiler {
 4. Generate pointer movement instructions
 5. Emit cell manipulation operations
 
-### 6. Brainfuck Codegen (`src/hbf_codegen.rs`)
+### 6. Brainfuck Codegen (`src/bf_codegen.rs`)
 
 **Responsibility**: Generate final Brainfuck code
 

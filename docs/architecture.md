@@ -226,7 +226,7 @@ pub enum BFOp {
 }
 ```
 
-#### 9. Brainfuck Codegen (`src/hbf_codegen.rs`)
+#### 9. Brainfuck Codegen (`src/bf_codegen.rs`)
 **Responsibility**: Final Code Generation
 
 Expands IR operations into raw Brainfuck characters:
@@ -305,7 +305,7 @@ graph TD
     Main --> BFOLexer[bfo_lexer.rs]
     Main --> BFOParser[bfo_parser.rs]
     Main --> BFOCompiler[bfo_compiler.rs]
-    Main --> Codegen[hbf_codegen.rs]
+    Main --> Codegen[bf_codegen.rs]
     
     HBFParser --> HBFToken[hbf_token.rs]
     HBFParser --> HBFAST[hbf_ast.rs]

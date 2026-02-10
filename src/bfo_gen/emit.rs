@@ -96,8 +96,8 @@ impl BFOGenerator {
             },
             Expr::BinaryOp { left, op, right } => {
                 // Check for shorthands: A = A + B, A = B + A, A = A - B
-                let left_is_name = if let Expr::Variable(v) = left.as_ref() { v == name } else { false };
-                let right_is_name = if let Expr::Variable(v) = right.as_ref() { v == name } else { false };
+                let left_is_name = if (self.get_var_name(left) == name) { true } else { false };
+                let right_is_name = if (self.get_var_name(right) == name) { true } else { false };
 
                 if left_is_name && *op == Token::Plus {
                     // A = A + right  =>  add A right
@@ -119,20 +119,23 @@ impl BFOGenerator {
                     self.emit_line("");
                 } else {
                     // General case: clear and rebuild
-                    self.emit_new(name, "0");
+                    self.emit_new("__hbf_temp", "0");
                     
                     // Add left
                     self.indent();
-                    self.emit(&format!("add {} ", name));
+                    self.emit(&format!("add {} ", "__hbf_temp"));
                     self.gen_expr_simple(*left.clone());
                     self.emit_line("");
                     
                     // Add/Sub right
                     self.indent();
                     let op_cmd = if *op == Token::Plus { "add" } else { "sub" };
-                    self.emit(&format!("{} {} ", op_cmd, name));
+                    self.emit(&format!("{} {} ", op_cmd, "__hbf_temp"));
                     self.gen_expr_simple(*right.clone());
                     self.emit_line("");
+
+                    self.emit_set(name, "__hbf_temp");
+                    self.free_cell("__hbf_temp");
                 }
             },
             _ => {
@@ -151,5 +154,23 @@ impl BFOGenerator {
     pub(super) fn free_cell(&mut self, name: &str) {
         self.indent();
         self.emit_line(&format!("free {}", name));
+    }
+    pub(super) fn get_var_name(&self, val: &Expr) -> String {
+        match val {
+            Expr::Variable(name) => name.to_string(),
+            Expr::ArrayAccess { array, index } => {
+                if let Expr::Number(i) = index.as_ref() {
+                    if let Expr::Variable(array_name) = array.as_ref() {
+                        if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
+                            if !elem_type.is_virtual() {
+                                return self.get_array_var_name(array_name, *i);
+                            }
+                        }
+                    }
+                }
+                return "".to_string();
+            }
+            _ => return "".to_string(),
+        }
     }
 }

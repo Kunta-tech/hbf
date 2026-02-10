@@ -34,7 +34,7 @@ impl Codegen {
                 for _ in 0..*n { self.output.push('<'); }
             },
             BFO::Print => {
-                self.output.push('.');
+                self.output.push_str(".\n");
             },
             BFO::Clear => {
                 self.output.push_str("\n[-]\n");
