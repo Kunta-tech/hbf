@@ -1,93 +1,223 @@
 # BFO (Brainfuck Object) Format
 
-BFO is the intermediate representation between HBF source code and Brainfuck output. It is a strict, assembly-like text format.
+BFO is the intermediate representation between HBF source code and Brainfuck output. It provides a human-readable, assembly-like format that serves as a stable contract between the frontend optimizer and the backend compiler.
 
 ## Purpose
 
-BFO serves as a deterministic, tape-ready contract:
-1. **Erasure**: All high-level abstractions (virtual types, nested math, loops) are erased.
-2. **Deterministic IR**: Uses only literal assignments and atomic cell operations.
-3. **Debuggable**: A human-readable representation of the optimized code.
+BFO serves three critical roles:
+
+1. **Abstraction Erasure**: All high-level constructs (virtual types, nested expressions, complex loops) are eliminated
+2. **Deterministic IR**: Uses only literal assignments and atomic cell operations
+3. **Debuggable Output**: Human-readable format for understanding compiler optimizations
 
 ## Syntax
 
 ### Comments
-```
+
+```bfo
 ; This is a comment
+; Comments start with semicolon and continue to end of line
 ```
 
 ### Instructions
 
-#### `set <var> <literal>`
-Set a variable to a literal value (integer or character):
-```
-set x 10
-set c 'H'
-```
-> [!IMPORTANT]
-> BFO `set` strictly supports **literals only**. Variable-to-variable moves must use the Add-to-Zero pattern.
+#### `new <var> <literal>`
 
-#### `add <var> <value>` / `sub <var> <value>`
-Perform arithmetic on a variable using a literal or another variable:
+Create and initialize a new variable with a literal value:
+
+```bfo
+new x 10        ; Create x and set to 10
+new c 'H'       ; Create c and set to 'H' (ASCII 72)
+new flag 1      ; Create flag and set to 1 (true)
 ```
-add c 'a'  ; c = c + 97
-sub x y    ; x = x - y
+
+> [!IMPORTANT]
+> `new` creates a variable in the current scope. The variable is freed when the scope exits.
+
+#### `set <var> <literal>`
+
+Set an existing variable to a literal value:
+
+```bfo
+set x 10        ; Set x to 10
+set c 'A'       ; Set c to 'A' (ASCII 65)
+set flag 0      ; Set flag to 0 (false)
+```
+
+> [!IMPORTANT]
+> BFO `set` **strictly supports literals only**. To copy one variable to another, use the Add-to-Zero pattern:
+> ```bfo
+> set target 0
+> add target source
+> ```
+
+#### `add <var> <value>`
+
+Add a value to a variable:
+
+```bfo
+add x 5         ; x = x + 5
+add x y         ; x = x + y (add variable y to x)
+add c 'a'       ; c = c + 97
+```
+
+#### `sub <var> <value>`
+
+Subtract a value from a variable:
+
+```bfo
+sub x 1         ; x = x - 1
+sub x y         ; x = x - y
+sub count 5     ; count = count - 5
 ```
 
 #### `print <value>`
-Output a value (literal or variable) as a character:
-```
-print 'A'
-print msg_1
+
+Output a value as a character:
+
+```bfo
+print 'A'       ; Print literal 'A'
+print x         ; Print value of variable x
+print 72        ; Print ASCII 72 ('H')
 ```
 
 #### `while <var> { ... }`
-Loop while the variable is non-zero.
-```
+
+Loop while the variable is non-zero:
+
+```bfo
 while count {
     print 'B'
     sub count 1
 }
 ```
 
-#### `func <name>(<params>) { ... }`
-Define a physical function. Only used for functions taking `cell` parameters.
+> [!NOTE]
+> BFO while loops map directly to Brainfuck's `[...]` construct. The loop continues as long as the variable is non-zero.
+
+#### `{ ... }` Block Scope
+
+Create a new scope for variables:
+
+```bfo
+{
+    new x 10
+    print x
+}
+; x is freed here
 ```
-func repeat(c) {
-    while i {
-        print c
-        sub i 1
+
+> [!NOTE]
+> Block scopes enable cell reuse. Variables declared with `new` inside a block are automatically freed when the block exits.
+
+#### `free <var>`
+
+Explicitly free a variable:
+
+```bfo
+new temp 5
+add result temp
+free temp
+```
+
+> [!NOTE]
+> `free` is typically used for temporary variables that are no longer needed. Variables in block scopes are automatically freed.
+
+## Instruction Semantics
+
+### new vs set
+
+| Instruction | Purpose | Scope | Example |
+|-------------|---------|-------|---------|
+| `new` | Create and initialize | Current scope | `new x 10` |
+| `set` | Update existing | Any scope | `set x 20` |
+
+**When to use `new`**:
+- First declaration of a variable
+- Creating function parameters
+- Temporary variables
+
+**When to use `set`**:
+- Updating existing variables
+- Resetting counters
+- Modifying state
+
+### Literal-Only Constraint
+
+BFO enforces that `set` and `new` only accept **literal values** (numbers or characters). This constraint:
+
+1. **Simplifies Backend**: No need to handle variable-to-variable moves in set/new
+2. **Explicit Copies**: Forces use of Add-to-Zero pattern for clarity
+3. **Optimization Friendly**: Literals enable better code generation
+
+**Variable Copy Pattern**:
+```bfo
+; WRONG: set target source  (not allowed!)
+
+; CORRECT: Add-to-Zero pattern
+set target 0
+add target source
+```
+
+## Common Patterns
+
+### Countdown Loop
+
+```bfo
+new counter 10
+while counter {
+    print 'X'
+    sub counter 1
+}
+free counter
+```
+
+### Variable Swap
+
+```bfo
+new temp 0
+add temp a      ; temp = a
+set a 0
+add a b         ; a = b
+set b 0
+add b temp      ; b = temp (original a)
+free temp
+```
+
+### Conditional Execution (Single-Shot While)
+
+```bfo
+new condition 1
+while condition {
+    ; This executes once if condition is non-zero
+    print 'Y'
+    set condition 0  ; Prevent re-execution
+}
+free condition
+```
+
+### Function Call Pattern
+
+```bfo
+; Function definition
+func repeat_char(count, ch) {
+    while count {
+        print ch
+        sub count 1
     }
 }
+
+; Function call (conceptual - actual calling handled by compiler)
+new arg1 5
+new arg2 'A'
+repeat_char(arg1, arg2)
+free arg1
+free arg2
 ```
 
-#### Function Call
-```
-}
+## Optimization Examples
 
-set fff_i 0   ; making i global
-func fff(c) {
-    while fff_i {
-        print c
-        sub fff_i 1
-    }
-}
-
-; Main program
-add_cells(5, 10)
-set fff_i 5
-fff('H')
-```
-
-This outputs:
-- ASCII 15 (from 5+10)
-- 'H' printed 5 times
-
-## Optimizations
-
-### Always-Virtual Variables
-
-**Principle:** Variables of type `int` and `char` are **Virtual**. They exist only in the compiler's symbol table and are folded/evaluated at compile-time. They are only "materialized" into BFO `set` instructions when needed for I/O.
+### Virtual Variable Elimination
 
 **HBF:**
 ```c
@@ -98,87 +228,155 @@ putc(c);
 ```
 
 **BFO:**
-```
-set c 15      ; HBF compiler evaluates 5 + 10 = 15
+```bfo
+new c 15        ; Compiler evaluated 5 + 10
 print c
 ```
 
-**Workflow:**
-1. **Silent Updates**: `int a = 5` and `int b = 10` update internal state but emit NO BFO.
-2. **Compile-Time Evaluation**: `a + b` is evaluated by the compiler.
-3. **Materialization**: The result `15` is emitted only when assigned to the physical `cell c`.
-
-**Benefits:**
-- ✅ Eliminates unnecessary variables
-- ✅ Reduces memory usage
-- ✅ Simplifies generated Brainfuck code
+**Explanation**: Virtual variables `a` and `b` never appear in BFO. The compiler folded `a + b` to `15` at compile-time.
 
 ### Loop Unrolling
 
-**Pattern:** `for (int i = 0; i < CONSTANT; i++)`
-
-**Behavior:** Compiler **unrolls** the loop, repeating the body statements inline.
-
 **HBF:**
 ```c
-for (int i = 0; i < 5; i++) {
+for (int i = 0; i < 3; i++) {
     putc('A');
 }
 ```
 
-**Optimized BFO (unrolled):**
-```
-print 'A'
-print 'A'
+**BFO:**
+```bfo
 print 'A'
 print 'A'
 print 'A'
 ```
 
-**How it works:**
-1. Detect constant iteration count at compile time
-2. Repeat loop body N times inline
-3. Eliminate loop variable and overhead
+**Explanation**: Constant-bound loops are completely unrolled, eliminating loop overhead.
 
-**Benefits:**
-- ✅ Zero loop overhead
-- ✅ Simpler BFO output
-- ✅ Faster execution
-
-### Native Countdown Loops (`forn`)
-
-**Pattern:** `forn(cell n = value)`
-
-**Behavior:** Generates native BFO `while` loop with countdown pattern.
+### Function Inlining
 
 **HBF:**
 ```c
-forn(cell n = 10) {
-    putc('B');
+void print_digit(int n) {
+    putc(48 + n);
+}
+
+print_digit(5);
+```
+
+**BFO:**
+```bfo
+print 53        ; Compiler evaluated 48 + 5 during inlining
+```
+
+**Explanation**: Functions with virtual parameters are inlined and their arithmetic is resolved at the call site.
+
+### Shorthand Binary Operations
+
+**HBF:**
+```c
+cell x = 10;
+x = x + 5;
+```
+
+**BFO:**
+```bfo
+new x 10
+add x 5         ; Atomic update, no redundant set
+```
+
+**Explanation**: The compiler detects `x = x + 5` pattern and emits a single `add` instead of `set x 0; add x x; add x 5`.
+
+## Complete Example
+
+**HBF Source:**
+```c
+void print_line(char[] msg) {
+    for (int i = 0; i < msg.length; i++) {
+        cell c = msg[i];
+        putc(c);
+    }
+    putc('\n');
+}
+
+print_line("Hi");
+```
+
+**Generated BFO:**
+```bfo
+; Inlined print_line("Hi")
+{
+    ; Loop unrolled (i = 0)
+    new c 'H'
+    print c
+    free c
+    
+    ; Loop unrolled (i = 1)
+    new c 'i'
+    print c
+    free c
+    
+    ; After loop
+    print '\n'
 }
 ```
 
-**BFO (native countdown loop):**
-```
-set n 10
-while n {
-    print 'B'
-    sub n 1
-}
-```
+**Explanation**:
+1. Function `print_line` is inlined
+2. `msg` is resolved to `"Hi"` (virtual array)
+3. Loop is unrolled (2 iterations)
+4. Array indexing `msg[i]` is resolved to literals `'H'` and `'i'`
+5. Block scope manages temporary `c` variable
 
-**How it works:**
-1. Initialize counter to iteration count
-2. Loop while counter ≠ 0
-3. Decrement by 1 each iteration
-4. Loop terminates when counter reaches 0
+## BFO to Brainfuck Mapping
 
-**Benefits:**
-- ✅ Works with runtime variables
-- ✅ Maps perfectly to Brainfuck's `[...]` loop
-- ✅ No comparison operations needed
+| BFO | Brainfuck (Conceptual) | Notes |
+|-----|------------------------|-------|
+| `new x 10` | `>++++++++++` | Move to new cell, add 10 |
+| `set x 5` | `[-]+++++` | Clear cell, add 5 |
+| `add x 3` | `+++` | Add 3 to current cell |
+| `sub x 2` | `--` | Subtract 2 from current cell |
+| `print x` | `.` | Output current cell |
+| `while x { ... }` | `[...]` | Loop while cell non-zero |
+| `free x` | - | Mark cell as available |
 
-**Use cases:**
-- Use `for` when iteration count is compile-time constant
-- Use `forn` when iteration count is runtime variable
+> [!NOTE]
+> Actual Brainfuck generation includes pointer movement (`<>`) to navigate between cells. The BFO compiler handles cell allocation and pointer tracking.
 
+## Design Principles
+
+1. **Simplicity**: Minimal instruction set
+2. **Explicitness**: No implicit operations
+3. **Literal-First**: Prefer literals over variable references
+4. **Scope-Aware**: Support block scoping for cell reuse
+5. **Debuggable**: Human-readable for inspection
+
+## Limitations
+
+1. **No Arithmetic in Instructions**: `add x (y + 5)` is not allowed. Must be pre-computed.
+2. **No Nested Expressions**: `print (a + b)` is not allowed. Must materialize to variable first.
+3. **No Direct Variable Copy**: `set x y` is not allowed. Must use Add-to-Zero pattern.
+4. **Single Condition in While**: `while (x && y)` is not allowed. Must use single variable.
+
+These limitations are **by design** to keep BFO simple and to force the frontend (HBF compiler) to perform all optimizations.
+
+## Future Extensions
+
+Potential future additions to BFO:
+
+- **Input Instruction**: `input <var>` for reading user input
+- **Multiply/Divide**: `mul <var> <val>`, `div <var> <val>` for efficient operations
+- **Copy Instruction**: `copy <dest> <src>` as syntactic sugar for Add-to-Zero
+- **Labels and Jumps**: For more complex control flow
+- **Type Annotations**: Optional type hints for better error messages
+
+## Validation
+
+Valid BFO programs must:
+1. Use only defined instructions
+2. Reference only declared variables
+3. Use literals in `new` and `set`
+4. Balance block scopes (`{` and `}`)
+5. Free variables before scope exit (or use block scopes)
+
+The BFO parser validates these constraints and reports errors during compilation.

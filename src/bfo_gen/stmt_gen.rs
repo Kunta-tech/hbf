@@ -1,234 +1,9 @@
-
-use crate::hbf_ast::{Expr, Stmt, Program, Type};
+use super::BFOGenerator;
+use crate::hbf_ast::{Expr, Stmt, Type};
 use crate::hbf_token::Token;
-use std::collections::HashMap;
-
-
-pub struct BFOGenerator {
-    output: String,
-    functions: HashMap<String, Stmt>, // Store function definitions
-    arrays: HashMap<String, (usize, usize, Type, Option<Vec<Expr>>)>, // name -> (base_addr, length, element_type, literals)
-    variables: Vec<HashMap<String, Expr>>, // Scoped virtual variables (int, char)
-    indent_level: usize,
-    forn_counter: usize,
-    native_loop_depth: usize,
-}
 
 impl BFOGenerator {
-    pub fn new() -> Self {
-        BFOGenerator {
-            output: String::new(),
-            functions: HashMap::new(),
-            arrays: HashMap::new(),
-            variables: vec![HashMap::new()],
-            indent_level: 0,
-            forn_counter: 0,
-            native_loop_depth: 0,
-        }
-    }
-
-    fn push_scope(&mut self) {
-        self.variables.push(HashMap::new());
-    }
-
-    fn pop_scope(&mut self) {
-        if self.variables.len() > 1 {
-            self.variables.pop();
-        }
-    }
-
-    fn get_variable(&self, name: &str) -> Option<Expr> {
-        for scope in self.variables.iter().rev() {
-            if let Some(val) = scope.get(name) {
-                return Some(val.clone());
-            }
-        }
-        None
-    }
-
-    fn set_variable(&mut self, name: &str, val: Expr) {
-        if let Some(scope) = self.variables.last_mut() {
-            scope.insert(name.to_string(), val);
-        }
-    }
-
-    fn get_array_var_name(&self, name: &str, index: i32) -> String {
-        if let Some((_, _, elem_type, _)) = self.arrays.get(name) {
-            if !elem_type.is_virtual() {
-                return format!("__hbf_cell_{}_{}", name, index);
-            }
-        }
-        name.to_string()
-    }
-    pub fn generate(&mut self, program: Program) -> String {
-        // Collect function definitions
-        for stmt in &program.statements {
-            if let Stmt::FuncDecl { name, .. } = stmt {
-                self.functions.insert(name.clone(), stmt.clone());
-            }
-        }
-
-        self.push_scope();
-
-        // Generate code (simulation/inlining happens here)
-        for stmt in program.statements {
-            self.gen_stmt(stmt, true);
-        }
-
-        self.pop_scope();
-
-        self.output.clone()
-    }
-
-    fn emit(&mut self, s: &str) {
-        self.output.push_str(s);
-    }
-
-    fn emit_line(&mut self, s: &str) {
-        self.output.push_str(s);
-        self.output.push('\n');
-    }
-
-    fn indent(&mut self) {
-        for _ in 0..self.indent_level {
-            self.output.push_str("    ");
-        }
-    }
-
-    fn emit_set(&mut self, name: &str, val: &str) {
-        self.indent();
-        self.emit_line(&format!("set {} {}", name, val));
-    }
-    fn emit_new(&mut self, name: &str, val: &str) {
-        self.indent();
-        self.emit_line(&format!("new {} {}", name, val));
-    }
-
-    fn emit_add(&mut self, name: &str, val: &str) {
-        self.indent();
-        self.emit_line(&format!("add {} {}", name, val));
-    }
-
-    fn emit_sub(&mut self, name: &str, val: &str) {
-        self.indent();
-        self.emit_line(&format!("sub {} {}", name, val));
-    }
-
-    fn materialize_to_cell(&mut self, name: &str, expr: Expr, is_new: bool) {
-        match &expr {
-            Expr::Number(n) => {
-                if is_new {
-                    self.emit_new(name, &n.to_string());
-                } else {
-                    self.emit_set(name, &n.to_string());
-                }
-            }
-            Expr::CharLiteral(c) => {
-                if is_new {
-                    self.emit_new(name, &format!("'{}'", c.escape_default()));
-                } else {
-                    self.emit_set(name, &format!("'{}'", c.escape_default()));
-                }
-            }
-            Expr::BoolLiteral(b) => {
-                if is_new {
-                    self.emit_new(name, if *b { "1" } else { "0" });
-                } else {
-                    self.emit_set(name, if *b { "1" } else { "0" });
-                }
-            }
-            Expr::Variable(v) => {
-                if name == v { return; }
-                if is_new {
-                    self.emit_new(name, "0");
-                } else {
-                    self.emit_set(name, "0");
-                }
-                self.emit_add(name, v);
-            },
-            Expr::ArrayAccess { array, index } => {
-                // If it's a physical array access, we treat it as a variable for the copy
-                if let Expr::Number(i) = index.as_ref() {
-                    if let Expr::Variable(array_name) = array.as_ref() {
-                        if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
-                            if !elem_type.is_virtual() {
-                                let cell_name = self.get_array_var_name(array_name, *i);
-                                self.emit_add(name, &cell_name);
-                                return;
-                            }
-                        }
-                    }
-                }
-                
-                // Otherwise fall back to gen_expr_simple
-                self.indent();
-                if is_new {
-                    self.emit(&format!("new {} ", name));
-                } else {
-                    self.emit(&format!("set {} ", name));
-                }
-                self.gen_expr_simple(expr);
-                self.emit_line("");
-            },
-            Expr::BinaryOp { left, op, right } => {
-                // Check for shorthands: A = A + B, A = B + A, A = A - B
-                let left_is_name = if let Expr::Variable(v) = left.as_ref() { v == name } else { false };
-                let right_is_name = if let Expr::Variable(v) = right.as_ref() { v == name } else { false };
-
-                if left_is_name && *op == Token::Plus {
-                    // A = A + right  =>  add A right
-                    self.indent();
-                    self.emit(&format!("add {} ", name));
-                    self.gen_expr_simple(*right.clone());
-                    self.emit_line("");
-                } else if right_is_name && *op == Token::Plus {
-                    // A = left + A  =>  add A left
-                    self.indent();
-                    self.emit(&format!("add {} ", name));
-                    self.gen_expr_simple(*left.clone());
-                    self.emit_line("");
-                } else if left_is_name && *op == Token::Minus {
-                    // A = A - right  =>  sub A right
-                    self.indent();
-                    self.emit(&format!("sub {} ", name));
-                    self.gen_expr_simple(*right.clone());
-                    self.emit_line("");
-                } else {
-                    // General case: clear and rebuild
-                    self.emit_new(name, "0");
-                    
-                    // Add left
-                    self.indent();
-                    self.emit(&format!("add {} ", name));
-                    self.gen_expr_simple(*left.clone());
-                    self.emit_line("");
-                    
-                    // Add/Sub right
-                    self.indent();
-                    let op_cmd = if *op == Token::Plus { "add" } else { "sub" };
-                    self.emit(&format!("{} {} ", op_cmd, name));
-                    self.gen_expr_simple(*right.clone());
-                    self.emit_line("");
-                }
-            },
-            _ => {
-                self.indent();
-                if is_new {
-                    self.emit(&format!("new {} ", name));
-                } else {
-                    self.emit(&format!("set {} ", name));
-                }
-                self.gen_expr_simple(expr);
-                self.emit_line("");
-            }
-        }
-    }
-    fn free_cell(&mut self, name: &str) {
-        self.indent();
-        self.emit_line(&format!("free {}", name));
-    }
-
-    fn gen_stmt(&mut self, stmt: Stmt, is_top_level: bool) {
+    pub(super) fn gen_stmt(&mut self, stmt: Stmt, is_top_level: bool) {
         match stmt {
             Stmt::VarDecl { var_type, name, value } => {
                 let folded = self.fold_expr(value);
@@ -241,12 +16,6 @@ impl BFOGenerator {
                             if let Expr::ArrayLiteral(elements) = folded {
                                 self.arrays.insert(name.clone(), (0, elements.len(), (**inner).clone(), None));
                                 for (i, el) in elements.iter().enumerate() {
-                                    let cell_name = format!("{}_{}", name, i);
-                                    // Use original name pattern, or maybe allow collisions for array elements?
-                                    // Actually HBF arrays are flat. The original code used to do:
-                                    // let cell_name = self.get_array_var_name(&name, i);
-                                    // Let's stick to a simple consistent naming.
-                                    // Reverting to previous state:
                                     let cell_name = self.get_array_var_name(&name, i as i32);
                                     self.materialize_to_cell(&cell_name, el.clone(), true);
                                 }
@@ -266,7 +35,7 @@ impl BFOGenerator {
                     },
                     _ => {
                         // int or char is virtual: store in memory (current scope)
-                        self.set_variable(&name, folded);
+                        self.declare_variable(&name, folded);
                     }
                 }
             },
@@ -295,7 +64,6 @@ impl BFOGenerator {
             },
             Stmt::Assign { name, value } => {
                 let folded = self.fold_expr(value);
-                // println!("Assigning {:?} to {:?}", folded, name);
                 // Determine if 'name' is physical or virtual
                 if self.get_variable(&name).is_some() {
                     if self.native_loop_depth > 0 {
@@ -386,6 +154,7 @@ impl BFOGenerator {
                         self.materialize_to_cell("__hbf_tmp", folded, false);
                         self.indent();
                         self.emit_line("print __hbf_tmp");
+                        self.emit_line("free __hbf_tmp");
                     }
                 }
             },
@@ -398,8 +167,10 @@ impl BFOGenerator {
     
                 let mut iterations = 0;
                 while iterations < 10000 {
+
                     let cond_val = if let Some(cond) = &condition {
                         let folded = self.fold_expr(cond.clone());
+                        
                         match folded {
                             Expr::BoolLiteral(b) => b,
                             Expr::Number(n) => n != 0,
@@ -410,7 +181,7 @@ impl BFOGenerator {
                     } else {
                         true
                     };
-        
+
                     if !cond_val { break; }
         
                     for s in &body {
@@ -435,7 +206,7 @@ impl BFOGenerator {
                 let mut is_var = false;
                 let name = match &count {
                     Expr::Variable(n) => {
-                        if let Some(val) = self.get_variable(n) {
+                        if let Some(_val) = self.get_variable(n) {
                             // Generate an anonymous counter
                             let for_name = format!("__hbf_forn_{}", self.forn_counter);
                             self.forn_counter += 1;
@@ -602,7 +373,7 @@ impl BFOGenerator {
         }
     }
 
-    fn gen_expr(&mut self, expr: Expr) {
+    pub(super) fn gen_expr(&mut self, expr: Expr) {
         match expr {
             Expr::Number(n) => self.emit(&n.to_string()),
             Expr::CharLiteral(c) => {
@@ -679,7 +450,7 @@ impl BFOGenerator {
         }
     }
 
-    fn gen_expr_simple(&mut self, expr: Expr) {
+    pub(super) fn gen_expr_simple(&mut self, expr: Expr) {
         match expr {
             Expr::Number(n) => self.emit(&n.to_string()),
             Expr::CharLiteral(c) => {
@@ -744,172 +515,5 @@ impl BFOGenerator {
             },
             _ => panic!("Only simple expressions (literals) allowed in BFO 'set' context: {:?}", expr),
         }
-    }
-
-
-
-    fn fold_expr(&self, expr: Expr) -> Expr {
-        match expr {
-            Expr::Variable(name) => {
-                // Substitute variable with its value if known (search scope stack)
-                if let Some(value) = self.get_variable(&name) {
-                    value
-                } else {
-                    Expr::Variable(name)
-                }
-            },
-            Expr::BinaryOp { left, op, right } => {
-                let left_folded = self.fold_expr(*left);
-                let right_folded = self.fold_expr(*right);
-                
-                // Helper to get numeric value of Number or CharLiteral or BoolLiteral
-                let to_num = |e: &Expr| match e {
-                    Expr::Number(n) => Some(*n),
-                    Expr::CharLiteral(c) => Some(*c as i32),
-                    Expr::BoolLiteral(b) => Some(if *b { 1 } else { 0 }),
-                    _ => None,
-                };
-
-                // Try to evaluate constant expressions
-                if let (Some(l), Some(r)) = (to_num(&left_folded), to_num(&right_folded)) {
-                    match op {
-                        Token::Plus => return Expr::Number(l + r),
-                        Token::Minus => return Expr::Number(l - r),
-                        Token::Star => return Expr::Number(l * r),
-                        Token::Slash => {
-                            if r == 0 { panic!("Division by zero in constant folding"); }
-                            return Expr::Number(l / r);
-                        },
-                        Token::Percent => {
-                            if r == 0 { panic!("Modulo by zero in constant folding"); }
-                            return Expr::Number(l % r);
-                        },
-                        Token::DoubleEquals => return Expr::BoolLiteral(l == r),
-                        Token::NotEquals => return Expr::BoolLiteral(l != r),
-                        Token::Less => return Expr::BoolLiteral(l < r),
-                        Token::LessEqual => return Expr::BoolLiteral(l <= r),
-                        Token::Greater => return Expr::BoolLiteral(l > r),
-                        Token::GreaterEqual => return Expr::BoolLiteral(l >= r),
-                        Token::AndAnd => return Expr::BoolLiteral((l != 0) && (r != 0)),
-                        Token::OrOr => return Expr::BoolLiteral((l != 0) || (r != 0)),
-                        _ => {}
-                    }
-                }
-                
-                // Can't fold, return the folded operands
-                Expr::BinaryOp {
-                    left: Box::new(left_folded),
-                    op,
-                    right: Box::new(right_folded),
-                }
-            },
-            Expr::ArrayAccess { array, index } => {
-                let array_folded = self.fold_expr(*array);
-                let index_folded = self.fold_expr(*index);
-
-                if let Expr::Number(i) = &index_folded {
-                    match &array_folded {
-                        Expr::StringLiteral(s) => {
-                            if let Some(ch) = s.chars().nth(*i as usize) {
-                                return Expr::CharLiteral(ch);
-                            }
-                        },
-                        Expr::ArrayLiteral(elements) => {
-                            if let Some(el) = elements.get(*i as usize) {
-                                return el.clone();
-                            }
-                        },
-                        Expr::Variable(name) => {
-                            if let Some((_, _, elem_type, Some(literals))) = self.arrays.get(name) {
-                                if *elem_type != Type::Cell {
-                                    if let Some(lit) = literals.get(*i as usize) {
-                                        return lit.clone();
-                                    }
-                                }
-                            }
-                        },
-                        _ => {}
-                    }
-                }
-
-                Expr::ArrayAccess {
-                    array: Box::new(array_folded),
-                    index: Box::new(index_folded),
-                }
-            },
-            Expr::MemberAccess { object, member } => {
-                let object_folded = self.fold_expr(*object);
-                if member == "length" {
-                    match &object_folded {
-                        Expr::StringLiteral(s) => return Expr::Number(s.len() as i32),
-                        Expr::ArrayLiteral(elements) => return Expr::Number(elements.len() as i32),
-                        Expr::Variable(name) => {
-                            if let Some((_, len, _, _)) = self.arrays.get(name) {
-                                return Expr::Number(*len as i32);
-                            }
-                        },
-                        _ => {}
-                    }
-                }
-                Expr::MemberAccess {
-                    object: Box::new(object_folded),
-                    member,
-                }
-            },
-            _ => expr, // Other expressions (CharLiteral, StringLiteral, Number) unchanged
-        }
-    }
-
-
-
-    fn inline_function(&mut self, params: Vec<(Type, String)>, args: Vec<Expr>, body: Vec<Stmt>) {
-        // 1. Evaluate arguments in CURRENT scope
-        let mut evaluated_args = Vec::new();
-        for arg in args {
-            evaluated_args.push(self.fold_expr(arg));
-        }
-
-        // 2. Push NEW scope for the function body (virtual scope)
-        self.push_scope();
-        
-        // 3. Start BFO block (runtime scope)
-        self.indent();
-        self.emit_line("{");
-        self.indent_level += 1;
-
-        // 4. Initialize parameters
-        for (i, (param_type, param_name)) in params.iter().enumerate() {
-            if let Some(arg) = evaluated_args.get(i) {
-                match param_type {
-                    Type::Cell => {
-                        // Pass-by-value: Create new local cell initialized with argument value
-                        // This 'new' will happen inside the BFO block, shadowing any outer 'param_name'
-                        self.materialize_to_cell(param_name, arg.clone(), true);
-                    },
-                    _ => {
-                        // Virtual variables (int, char): simulate via aliasing/folding
-                        self.set_variable(param_name, arg.clone());
-                    }
-                }
-            }
-        }
-
-        // 5. Generate code for the body
-        for stmt in body {
-            self.gen_stmt(stmt, false);
-        }
-
-        // 6. End BFO block
-        self.indent_level -= 1;
-        self.indent();
-        self.emit_line("}");
-
-        // 7. Pop scope
-        self.pop_scope();
-    }
-
-    fn get_var_type(&self, _name: &str) -> Option<Type> {
-        // ... this might need scoping too if types can change, but usually they don't in HBF
-        None
     }
 }
