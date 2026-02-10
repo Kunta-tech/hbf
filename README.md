@@ -15,7 +15,7 @@ HBF bridges the gap between high-level programming and Brainfuck by providing:
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/hbf.git
+git clone https://github.com/Kunta-tech/hbf.git
 cd hbf
 cargo build --release
 ```
@@ -224,7 +224,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ## License
 
-[Your License Here]
+[MIT License](https://github.com/Kunta-tech/hbf/blob/main/LICENSE)
 
 ## Acknowledgments
 

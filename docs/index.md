@@ -17,7 +17,7 @@ Welcome to the comprehensive documentation for the **Higher-Level Brainfuck (HBF
 
 #### Installation
 ```bash
-git clone https://github.com/yourusername/hbf.git
+git clone https://github.com/Kunta-tech/hbf.git
 cd hbf
 cargo build --release
 ```
@@ -301,13 +301,13 @@ We welcome contributions! Areas of interest:
 
 ## Resources
 
-- **Source Code**: [GitHub Repository](https://github.com/yourusername/hbf)
-- **Issue Tracker**: [GitHub Issues](https://github.com/yourusername/hbf/issues)
+- **Source Code**: [GitHub Repository](https://github.com/Kunta-tech/hbf)
+- **Issue Tracker**: [GitHub Issues](https://github.com/Kunta-tech/hbf/issues)
 - **Brainfuck Reference**: [Esolangs Wiki](https://esolangs.org/wiki/Brainfuck)
 
 ## License
 
-[Your License Here]
+[MIT License](https://github.com/Kunta-tech/hbf/blob/main/LICENSE)
 
 ---
 
