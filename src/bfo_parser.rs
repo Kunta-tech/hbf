@@ -91,6 +91,12 @@ impl<'a> BFOParser<'a> {
                 let value = self.parse_value();
                 BFOStmt::Set { name, value }
             }
+            BFOToken::New => {
+                self.advance();
+                let name = self.parse_identifier();
+                let value = self.parse_value();
+                BFOStmt::New { name, value }
+            }
             BFOToken::Add => {
                 self.advance();
                 let name = self.parse_identifier();
@@ -121,6 +127,11 @@ impl<'a> BFOParser<'a> {
                 self.eat(BFOToken::RBrace);
                 BFOStmt::While { condition, body }
             }
+            BFOToken::Free => {
+                self.advance();
+                let name = self.parse_identifier();
+                BFOStmt::Free { name }
+            }
             BFOToken::Identifier(_) => {
                 // Function call
                 let name = self.parse_identifier();
@@ -128,6 +139,15 @@ impl<'a> BFOParser<'a> {
                 let args = self.parse_args();
                 self.eat(BFOToken::RParen);
                 BFOStmt::Call { name, args }
+            }
+            BFOToken::LBrace => {
+                self.advance();
+                let mut body = Vec::new();
+                while self.current_token != BFOToken::RBrace && self.current_token != BFOToken::EOF {
+                    body.push(self.parse_stmt());
+                }
+                self.eat(BFOToken::RBrace);
+                BFOStmt::Block(body)
             }
             _ => panic!("Unexpected token in statement: {:?}", self.current_token),
         }

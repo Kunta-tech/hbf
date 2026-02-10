@@ -1,15 +1,15 @@
 
-mod token;
-mod lexer;
-mod ast;
-mod parser;
+mod hbf_token;
+mod hbf_lexer;
+mod hbf_ast;
+mod hbf_parser;
 mod bfo_gen;
 mod bfo_lexer;
 mod bfo_parser;
 mod bfo_ast;
 mod bfo_compiler;
 mod ir;
-mod codegen;
+mod hbf_codegen;
 
 use std::env;
 use std::fs;
@@ -71,7 +71,7 @@ fn build_bf(bfo_filename: &str) {
     let instructions = bfo_compiler.compile(bfo_program);
 
     // 4. Codegen IR to BF
-    let mut bf_codegen = codegen::Codegen::new();
+    let mut bf_codegen = hbf_codegen::Codegen::new();
     let bf_code = bf_codegen.generate(&instructions);
 
     // 5. Write BF file
@@ -103,10 +103,10 @@ fn compile_to_bfo(filename: &str) -> String {
     let source = fs::read_to_string(filename).expect("Failed to read file");
 
     // Lex
-    let lexer = lexer::Lexer::new(&source);
+    let lexer = hbf_lexer::Lexer::new(&source);
     
     // Parse
-    let mut parser = parser::Parser::new(lexer);
+    let mut parser = hbf_parser::Parser::new(lexer);
     let program = parser.parse_program();
 
     // Generate BFO

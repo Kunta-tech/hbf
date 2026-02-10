@@ -1,9 +1,9 @@
-func main() {
-    set count 5
+; defined function main
+{
+    new count 5
     while count {
         print '*'
         sub count 1
     }
     print '\n'
 }
-main()

@@ -1,6 +1,6 @@
-func main() {
-    set result 67
+; defined function main
+{
+    new result 67
     print result
     print '\n'
 }
-main()

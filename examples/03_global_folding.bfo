@@ -1,7 +1,11 @@
-; unpredictable function print_digit
-func main() {
-    print 49
-    print 50
+; defined function print_digit
+; defined function main
+{
+    {
+        print 49
+    }
+    {
+        print 50
+    }
     print '\n'
 }
-main()

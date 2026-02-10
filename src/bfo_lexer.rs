@@ -4,11 +4,13 @@
 pub enum BFOToken {
     // Keywords
     Func,
+    New,
     Set,
     Add,
     Sub,
     Print,
     While,
+    Free,
     
     // Literals
     Number(i32),
@@ -161,10 +163,12 @@ impl<'a> BFOLexer<'a> {
         match ident.as_str() {
             "func" => BFOToken::Func,
             "set" => BFOToken::Set,
+            "new" => BFOToken::New,
             "add" => BFOToken::Add,
             "sub" => BFOToken::Sub,
             "print" => BFOToken::Print,
             "while" => BFOToken::While,
+            "free" => BFOToken::Free,
             _ => BFOToken::Identifier(ident),
         }
     }

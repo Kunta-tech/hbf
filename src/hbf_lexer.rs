@@ -1,5 +1,5 @@
 
-use crate::token::Token;
+use crate::hbf_token::Token;
 use std::iter::Peekable;
 use std::str::Chars;
 

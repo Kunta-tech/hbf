@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 pub struct BFOCompiler {
     instructions: Vec<BFO>,
-    symbol_table: HashMap<String, usize>,
+    scopes: Vec<HashMap<String, usize>>,
     functions: HashMap<String, (Vec<String>, Vec<BFOStmt>)>,
     current_pointer: usize,
     next_free_cell: usize,
@@ -16,11 +16,22 @@ impl BFOCompiler {
     pub fn new() -> Self {
         BFOCompiler {
             instructions: Vec::new(),
-            symbol_table: HashMap::new(),
+            scopes: vec![HashMap::new()], // global scope
             functions: HashMap::new(),
             current_pointer: 0,
             next_free_cell: 0,
             free_pool: Vec::new(),
+        }
+    }
+    fn enter_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn exit_scope(&mut self) {
+        if let Some(scope) = self.scopes.pop() {
+            for (_, cell) in scope {
+                self.free_cell(cell);
+            }
         }
     }
 
@@ -51,27 +62,49 @@ impl BFOCompiler {
 
     fn allocate_cell(&mut self) -> usize {
         if let Some(cell) = self.free_pool.pop() {
+            // println!("Allocating cell {} from pool", cell);
             cell
         } else {
             let cell = self.next_free_cell;
             self.next_free_cell += 1;
+            // println!("Allocating cell {} from next_free_cell", cell);
             cell
         }
     }
 
     fn free_cell(&mut self, cell: usize) {
+        // println!("Freeing cell {}", cell);
         self.free_pool.push(cell);
     }
 
     fn get_or_allocate_cell(&mut self, name: &str) -> usize {
-        if let Some(&cell) = self.symbol_table.get(name) {
-            cell
-        } else {
-            let cell = self.allocate_cell();
-            self.symbol_table.insert(name.to_string(), cell);
-            cell
+        // Search from inner scope → outer
+        if let Some(scope) = self.scopes.last_mut() {
+            if let Some(&cell) = scope.get(name) {
+                return cell;
+            }
         }
+
+        // Not found → allocate in current scope
+        let cell = self.allocate_cell();
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert(name.to_string(), cell);
+
+        cell
     }
+
+    fn get_cell(&mut self, name: &str) -> Option<usize> {
+        // Search from inner scope → outer
+        for scope in self.scopes.iter().rev() {
+            if let Some(&cell) = scope.get(name) {
+                return Some(cell);
+            }
+        }
+        None
+    }
+
 
     fn move_to(&mut self, target: usize) {
         if target > self.current_pointer {
@@ -97,7 +130,7 @@ impl BFOCompiler {
                 self.emit(BFO::Add(c as u8));
             }
             BFOValue::Variable(name) => {
-                let src = self.get_or_allocate_cell(&name);
+                let src = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
                 self.copy_cell(src, target);
             }
         }
@@ -153,26 +186,34 @@ impl BFOCompiler {
 
     fn handle_call(&mut self, name: &str, args: Vec<BFOValue>) {
         if let Some((params, body)) = self.functions.get(name).cloned() {
-            let old_table = self.symbol_table.clone();
-            let mut local_allocations = Vec::new();
-            
+
+            // Create function scope
+            self.enter_scope();
+
             for (i, param) in params.iter().enumerate() {
                 if let Some(arg) = args.get(i) {
-                    match arg {
+
+                    let cell = match arg {
                         BFOValue::Variable(v) => {
-                            let cell = *old_table.get(v).expect("Undefined arg");
-                            self.symbol_table.insert(param.clone(), cell);
+                            // Use your existing scoped resolver
+                            self.get_cell(v).expect(&format!("Undefined argument variable: {}", v))
                         }
+
                         BFOValue::Number(_) | BFOValue::Char(_) => {
-                            // Materialize literal to a temp cell for the param
                             let cell = self.allocate_cell();
-                            local_allocations.push(cell);
+
                             self.move_to(cell);
                             self.emit(BFO::Clear);
                             self.emit_value_into(arg.clone(), cell);
-                            self.symbol_table.insert(param.clone(), cell);
+
+                            cell
                         }
-                    }
+                    };
+
+                    self.scopes
+                        .last_mut()
+                        .unwrap()
+                        .insert(param.clone(), cell);
                 }
             }
 
@@ -180,12 +221,9 @@ impl BFOCompiler {
                 self.compile_stmt(stmt);
             }
 
-            self.symbol_table = old_table;
-            
-            // Explicitly free literal cells used as params
-            for cell in local_allocations {
-                self.free_cell(cell);
-            }
+            // Scope exit frees everything
+            self.exit_scope();
+
         } else {
             panic!("Undefined function call in BFO: {}", name);
         }
@@ -194,17 +232,23 @@ impl BFOCompiler {
     fn compile_stmt(&mut self, stmt: BFOStmt) {
         match stmt {
             BFOStmt::Set { name, value } => {
+                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
+                self.move_to(cell);
+                self.emit(BFO::Clear);
+                self.emit_value_into(value, cell);
+            }
+            BFOStmt::New { name, value } => {
                 let cell = self.get_or_allocate_cell(&name);
                 self.move_to(cell);
                 self.emit(BFO::Clear);
                 self.emit_value_into(value, cell);
             }
             BFOStmt::Add { name, value } => {
-                let cell = self.get_or_allocate_cell(&name);
+                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
                 self.emit_value_into(value, cell);
             }
             BFOStmt::Sub { name, value } => {
-                let cell = self.get_or_allocate_cell(&name);
+                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
                 match value {
                     BFOValue::Number(n) => {
                         self.move_to(cell);
@@ -215,7 +259,7 @@ impl BFOCompiler {
                         self.emit(BFO::Sub(c as u8));
                     }
                     BFOValue::Variable(v) => {
-                        let src = self.get_or_allocate_cell(&v);
+                        let src = self.get_cell(&v).expect(&format!("Undefined variable: {}", v));
                         self.sub_variable(src, cell);
                     }
                 }
@@ -223,7 +267,7 @@ impl BFOCompiler {
             BFOStmt::Print { value } => {
                 match value {
                     BFOValue::Variable(name) => {
-                        let cell = self.get_or_allocate_cell(&name);
+                        let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
                         self.move_to(cell);
                         self.emit(BFO::Print);
                     }
@@ -247,13 +291,15 @@ impl BFOCompiler {
                 }
             }
             BFOStmt::While { condition, body } => {
-                let cond_cell = self.get_or_allocate_cell(&condition);
+                let cond_cell = self.get_cell(&condition).expect(&format!("Undefined variable: {}", condition));
                 self.move_to(cond_cell);
                 
                 let parent_instructions = std::mem::replace(&mut self.instructions, Vec::new());
+                self.enter_scope();
                 for s in body {
                     self.compile_stmt(s);
                 }
+                self.exit_scope();
                 // BF Loop requires head to be at cond_cell at the start and end of block.
                 self.move_to(cond_cell);
                 
@@ -262,6 +308,17 @@ impl BFOCompiler {
             }
             BFOStmt::Call { name, args } => {
                 self.handle_call(&name, args);
+            }
+            BFOStmt::Free { name } => {
+                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
+                self.free_cell(cell);
+            }
+            BFOStmt::Block(stmts) => {
+                self.enter_scope();
+                for stmt in stmts {
+                    self.compile_stmt(stmt);
+                }
+                self.exit_scope();
             }
         }
     }

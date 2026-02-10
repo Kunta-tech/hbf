@@ -1,5 +1,5 @@
 
-use crate::token::Token;
+use crate::hbf_token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -54,12 +54,6 @@ pub enum Stmt {
         var_type: Type,
         name: String,
         value: Expr,
-    },
-    Increment {
-        name: String,
-    },
-    Decrement {
-        name: String,
     },
     Assign {
         name: String,

@@ -1,7 +1,7 @@
 
-use crate::token::Token;
-use crate::lexer::Lexer;
-use crate::ast::{Expr, Stmt, Program, Type};
+use crate::hbf_token::Token;
+use crate::hbf_lexer::Lexer;
+use crate::hbf_ast::{Expr, Stmt, Program, Type};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -88,7 +88,12 @@ impl<'a> Parser<'a> {
                         Expr::Variable(var_name) => {
                             self.eat(Token::PlusPlus);
                             self.eat(Token::Semicolon);
-                            Stmt::Increment { name: var_name }
+                            Stmt::Assign { name: var_name.clone(),
+                                    value: Expr::BinaryOp { left: Box::new(Expr::Variable(var_name)),
+                                    op: Token::Plus,
+                                    right: Box::new(Expr::Number(1))
+                                    }
+                                }
                         }
                         _ => panic!("++ can only be applied to variables"),
                     }
@@ -97,7 +102,12 @@ impl<'a> Parser<'a> {
                         Expr::Variable(var_name) => {
                             self.eat(Token::MinusMinus);
                             self.eat(Token::Semicolon);
-                            Stmt::Decrement { name: var_name }
+                            Stmt::Assign { name: var_name.clone(),
+                                    value: Expr::BinaryOp { left: Box::new(Expr::Variable(var_name)),
+                                    op: Token::Minus,
+                                    right: Box::new(Expr::Number(1))
+                                    }
+                                }
                         }
                         _ => panic!("-- can only be applied to variables"),
                     }
@@ -330,7 +340,12 @@ impl<'a> Parser<'a> {
                         Expr::Variable(var_name) => {
                             self.eat(Token::PlusPlus);
                             self.eat(Token::Semicolon);
-                            Stmt::Increment { name: var_name }
+                            Stmt::Assign { name: var_name.clone(),
+                                    value: Expr::BinaryOp { left: Box::new(Expr::Variable(var_name)),
+                                    op: Token::Plus,
+                                    right: Box::new(Expr::Number(1))
+                                    }
+                                }
                         }
                         _ => panic!("++ can only be applied to variables"),
                     }
@@ -339,7 +354,12 @@ impl<'a> Parser<'a> {
                         Expr::Variable(var_name) => {
                             self.eat(Token::MinusMinus);
                             self.eat(Token::Semicolon);
-                            Stmt::Decrement { name: var_name }
+                            Stmt::Assign { name: var_name.clone(),
+                                    value: Expr::BinaryOp { left: Box::new(Expr::Variable(var_name)),
+                                    op: Token::Minus,
+                                    right: Box::new(Expr::Number(1))
+                                    }
+                                }
                         }
                         _ => panic!("-- can only be applied to variables"),
                     }

@@ -1,7 +1,7 @@
-func main() {
+; defined function main
+{
     print 'B'
     print 'F'
     print 'O'
     print '\n'
 }
-main()

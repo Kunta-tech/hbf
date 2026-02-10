@@ -1,7 +1,7 @@
 
-use crate::ast::{Expr, Stmt, Program};
+use crate::hbf_ast::{Expr, Stmt, Program};
 use crate::ir::BFO;
-use crate::token::Token;
+use crate::hbf_token::Token;
 use std::collections::HashMap;
 
 pub struct Compiler {

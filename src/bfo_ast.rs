@@ -24,6 +24,9 @@ pub enum BFOStmt {
     // set x value
     Set { name: String, value: BFOValue },
     
+    // new x value
+    New { name: String, value: BFOValue },
+    
     // add x value
     Add { name: String, value: BFOValue },
     
@@ -38,6 +41,12 @@ pub enum BFOStmt {
     
     // function_name(args)
     Call { name: String, args: Vec<BFOValue> },
+
+    // free x
+    Free { name: String },
+
+    // { ... }
+    Block(Vec<BFOStmt>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

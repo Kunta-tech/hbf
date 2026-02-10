@@ -37,14 +37,14 @@ impl Codegen {
                 self.output.push('.');
             },
             BFO::Clear => {
-                self.output.push_str("[-]");
+                self.output.push_str("\n[-]\n");
             },
             BFO::Loop(body) => {
-                self.output.push('[');
+                self.output.push_str("\n[");
                 for sub_op in body {
                     self.emit_op(sub_op);
                 }
-                self.output.push(']');
+                self.output.push_str("]\n");
             }
         }
     }
