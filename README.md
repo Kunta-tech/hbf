@@ -22,17 +22,25 @@ cargo build --release
 
 ### Usage
 
-**Compile HBF to BFO:**
-```bash
-cargo run -- compile example.hbf
-```
-
 **Build complete Brainfuck executable:**
 ```bash
-cargo run -- build example.hbf
+cargo run -- example.hbf
 ```
 
-This generates `example.bfo` (intermediate) and `example.bf` (final Brainfuck).
+**Compile to BFO only:**
+```bash
+cargo run -- -c example.hbf
+```
+
+**Specify output filename:**
+```bash
+cargo run -- example.hbf -o custom.bf
+```
+
+**Compile BFO to BF:**
+```bash
+cargo run -- example.bfo
+```
 
 ### Hello World Example
 
