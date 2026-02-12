@@ -313,6 +313,47 @@ impl BFOCompiler {
                 let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
                 self.free_cell(cell);
             }
+            BFOStmt::Ref { alias, original } => {
+                let cell = self.get_cell(&original).expect(&format!("Undefined variable to ref: {}", original));
+                self.scopes.last_mut().unwrap().insert(alias, cell);
+            }
+            BFOStmt::Scan { name } => {
+                let cell = self.get_cell(&name).expect(&format!("Undefined variable for scan: {}", name));
+                self.move_to(cell);
+                self.emit(BFO::Scan);
+            }
+            BFOStmt::Move { dest, src } => {
+                let dest_cell = self.get_cell(&dest).expect(&format!("Undefined variable: {}", dest));
+                let src_cell = self.get_cell(&src).expect(&format!("Undefined variable: {}", src));
+                
+                if dest_cell == src_cell { return; }
+
+                // 1. Clear dest
+                self.move_to(dest_cell);
+                self.emit(BFO::Clear);
+
+                // 2. Move src to dest: while src { sub src 1; move_to dest; add dest 1; move_to src }
+                self.move_to(src_cell);
+                let mut body = Vec::new();
+                body.push(BFO::Sub(1));
+                
+                let diff = if dest_cell > src_cell {
+                    BFO::MoveRight(dest_cell - src_cell)
+                } else {
+                    BFO::MoveLeft(src_cell - dest_cell)
+                };
+                body.push(diff.clone());
+                body.push(BFO::Add(1));
+                
+                let rev = if dest_cell > src_cell {
+                    BFO::MoveLeft(dest_cell - src_cell)
+                } else {
+                    BFO::MoveRight(src_cell - dest_cell)
+                };
+                body.push(rev);
+                
+                self.emit(BFO::Loop(body));
+            }
             BFOStmt::Block(stmts) => {
                 self.enter_scope();
                 for stmt in stmts {

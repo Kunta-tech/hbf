@@ -100,6 +100,7 @@ impl Type {
 **Implementation**:
 - Recursive descent parser
 - Operator precedence climbing for expressions
+- Unified post-fix operator handling (`a++` is immediately parsed as an assignment `a = a + 1`)
 - Lookahead for statement disambiguation
 
 **Key Parsing Functions**:
@@ -282,13 +283,16 @@ fn gen_expr_simple(&mut self, expr: Expr)
    - Virtual → Update scope stack
    - Physical → Emit `set`/`add` instructions
 
-3. **For Loops** (Unrolling):
+3. **For/While Loops** (Unrolling):
    ```rust
-   // Simulate loop by repeating body N times
-   for iterations in 0..N {
+   // For For loops with constant bounds or While loops with virtual conditions
+   while iterations < 10000 && !loop_finished {
+       // Evaluate condition
+       if !is_truthy(self.fold_expr(condition)) { break; }
        for stmt in &body {
            self.gen_stmt(stmt.clone(), false);
        }
+       // ... for-update ...
    }
    ```
 
@@ -391,47 +395,21 @@ BFOp::Input → ","
 
 ## Critical Implementation Details
 
-### Loop Unrolling Logic
+### Loop Unrolling Logic (For and While)
 
 Located in `stmt_gen.rs`:
 
 ```rust
-Stmt::For { init, condition, update, body } => {
-    self.push_scope();
+// Unified unrolling for For and While
+let mut iterations = 0;
+while iterations < 10000 {
+    let cond_val = if let Some(cond) = &condition {
+        self.fold_expr(cond.clone()).is_truthy()
+    } else { true };
     
-    // Execute init
-    if let Some(i) = init {
-        self.gen_stmt(*i, false);
-    }
-    
-    // Simulate loop
-    let mut iterations = 0;
-    while iterations < 10000 {
-        // Evaluate condition
-        let cond_val = if let Some(cond) = &condition {
-            match self.fold_expr(cond.clone()) {
-                Expr::BoolLiteral(b) => b,
-                Expr::Number(n) => n != 0,
-                _ => panic!("Non-constant condition"),
-            }
-        } else { true };
-        
-        if !cond_val { break; }
-        
-        // Execute body
-        for s in &body {
-            self.gen_stmt(s.clone(), false);
-        }
-        
-        // Execute update
-        if let Some(u) = &update {
-            self.gen_stmt(*u.clone(), false);
-        }
-        
-        iterations += 1;
-    }
-    
-    self.pop_scope();
+    if !cond_val { break; }
+    // ... generate body ...
+    iterations += 1;
 }
 ```
 

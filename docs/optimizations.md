@@ -231,17 +231,38 @@ print 'H'
 print 'i'
 ```
 
+### 3.1. While Loop Unrolling
+
+**Overview**: Similar to `for` loops, `while` loops are unrolled when the condition is virtual.
+
+**Implementation**: The generator evaluates the condition in each virtual iteration. If the virtual state changes such that the condition becomes false, the unrolling stops.
+
+**Example**:
+```c
+int i = 3;
+while (i > 0) {
+    putc('!');
+    i--;
+}
+```
+**BFO**:
+```bfo
+print '!'
+print '!'
+print '!'
+```
+
 ### Benefits
 
 - ✅ **Zero Loop Overhead**: No counter, no condition check
 - ✅ **Minimal BFO**: Only body statements repeated
 - ✅ **Faster Execution**: Direct execution, no branching
 
-## 4. Function Inlining
+## 4. Function Inlining & Return Optimization
 
 ### Overview
 
-Functions with virtual parameters are automatically inlined, enabling cross-function constant folding.
+Functions with virtual parameters are automatically inlined, enabling cross-function constant folding. Additionally, the compiler tracks **function return types** so that functions returning virtual types (like `int square(int n)`) can be fully evaluated at compile-time.
 
 ### Implementation
 
@@ -378,11 +399,35 @@ print '\n'
 
 **Result**: Debug branch completely eliminated.
 
-## 6. Shorthand Binary Operations
+## 6. Post-Fix Operator Transformation
+
+**Overview**: `++` and `--` operators are transformed into standard assignments at the parser level.
+
+**Implementation**:
+- `a++` → `a = a + 1`
+- `arr[i]--` → `arr[i] = arr[i] - 1`
+
+**Benefit**: This unification allows these operators to work "for free" with the constant folder for virtual variables (`a++` updates the compile-time value) while still leveraging specialized `add`/`sub` primitives for `cell` variables via the generator's pattern matching.
+
+## 7. Procedural Primitives & Restricted Math
 
 ### Overview
 
-Patterns like `A = A + B` are optimized to atomic `add` instructions.
+To ensure maximum efficiency and tape control, HBF restricts **infix math** on `cell` types. Instead, it provides **procedural primitives** that map to atomic, highly optimized BFO instructions.
+
+### The "Move" Optimization
+
+The `move(dest, src)` primitive is a critical optimization. While a `copy` requires a temporary cell and two loops to preserve the source, a `move` is destructive and maps to a single, minimal Brainfuck loop.
+
+| Operation | BF Mapping | Complexity |
+|-----------|------------|------------|
+| `copy(b, a)` | `[ - > + > + < < ] > [ - < + > ]` | O(2n) + Temp |
+| `move(b, a)` | `[ - > + < ]` | O(n) + No Temp |
+
+### Shorthand Binary Operations (Ergonomics)
+Pointers like `A = A + B` are still supported via the parser mapping them to procedural `add` or `sub` calls.
+
+---
 
 ### Implementation
 
@@ -421,15 +466,12 @@ Expr::BinaryOp { left, op, right } => {
 | `A = A - B` | `sub A B` |
 | `A = A + 5` | `add A 5` |
 
-### Example
-
-**HBF**:
-```c
-cell counter = 10;
-counter = counter + 5;
-counter = counter - 2;
 putc(counter);
 ```
+
+### 8. Auto-Materialization
+When a complex expression is used as an argument to a procedural primitive (e.g., `add(c, b + 5)`), the compiler automatically materializes the virtual part to a temporary cell, ensuring the developer can use convenient syntax without losing performance control.
+
 
 **BFO**:
 ```bfo

@@ -132,6 +132,23 @@ impl<'a> BFOParser<'a> {
                 let name = self.parse_identifier();
                 BFOStmt::Free { name }
             }
+            BFOToken::Ref => {
+                self.advance();
+                let alias = self.parse_identifier();
+                let original = self.parse_identifier();
+                BFOStmt::Ref { alias, original }
+            }
+            BFOToken::Move => {
+                self.advance();
+                let dest = self.parse_identifier();
+                let src = self.parse_identifier();
+                BFOStmt::Move { dest, src }
+            }
+            BFOToken::Scan => {
+                self.advance();
+                let name = self.parse_identifier();
+                BFOStmt::Scan { name }
+            }
             BFOToken::Identifier(_) => {
                 // Function call
                 let name = self.parse_identifier();

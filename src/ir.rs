@@ -6,6 +6,7 @@ pub enum BFO {
     MoveRight(usize),// >n
     MoveLeft(usize), // <n
     Print,           // .
+    Scan,            // ,
     Loop(Vec<BFO>),  // [ ... ]
     
     // Higher level ops that might be lowered later or directly supported

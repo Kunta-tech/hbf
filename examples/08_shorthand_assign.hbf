@@ -2,12 +2,12 @@ void main() {
     cell A = 65; // 'A'
     int i = 5;
     
-    // Optimized shorthand: A = A + i => add A i
-    A = A + i;
+    // Optimized shorthand: add(A, i)
+    add(A, i);
     putc(A); // 'F' (70)
     
-    // Reverse order: A = i + A => add A i
-    A = i + A;
+    // Reverse order: add(A, i)
+    add(A, i);
     putc(A); // 'K' (75)
     
     putc('\n');

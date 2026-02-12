@@ -36,6 +36,9 @@ pub enum BFOStmt {
     // print x
     Print { value: BFOValue },
     
+    // scan x
+    Scan { name: String },
+    
     // while x { ... }
     While { condition: String, body: Vec<BFOStmt> },
     
@@ -44,6 +47,12 @@ pub enum BFOStmt {
 
     // free x
     Free { name: String },
+
+    // move dest src
+    Move { dest: String, src: String },
+
+    // ref alias original
+    Ref { alias: String, original: String },
 
     // { ... }
     Block(Vec<BFOStmt>),

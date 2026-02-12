@@ -1,13 +1,13 @@
 # HBF Compiler
 
-A **Higher-Level Brainfuck** compiler written in Rust. HBF provides a C-like programming language that compiles to Brainfuck through an optimized intermediate representation (BFO).
+A **staged partial-evaluation language with a cell-based IR targeting Brainfuck**. **HBF** (**Highlevel Brainfuck**) provides a C-like programming language that compiles to Brainfuck through an optimized intermediate representation called **BFO** (**Brainfuck Object**).
 
 ## Overview
 
 HBF bridges the gap between high-level programming and Brainfuck by providing:
 - **Familiar Syntax**: C-like language with variables, functions, loops, and arrays
 - **Virtual Types**: Zero-footprint `int`, `char`, and `bool` types that exist only at compile-time
-- **Aggressive Optimization**: Constant folding, loop unrolling, and function inlining
+- **Aggressive Optimization**: Constant folding, polymorphic loop unrolling, and function inlining
 - **Intermediate Representation**: Human-readable BFO format for debugging and optimization
 
 ## Quick Start
@@ -100,17 +100,24 @@ print_digit(5);  // Outputs: '5'
 print 53    ; Compiler evaluated 48 + 5
 ```
 
-### 4. Physical Types for Tape Management
+### 4. Physical Types & Procedural Math
 
-Use `cell` and `cell[]` for variables that need persistent tape storage:
+Use `cell` and `cell[]` for variables that need persistent tape storage. To ensure efficiency, infix math (like `a + b`) is restricted for cells. Instead, use procedural primitives:
 
 ```c
-cell counter = 10;
-while (counter) {
-    putc('!');
-    counter = counter - 1;
-}
+cell a = 10;
+cell b = 5;
+
+add(a, b);       // a = a + b
+sub(a, 1);       // a = a - 1
+a++;             // Optimized increment (unified for virtual/physical)
+
+cell c;
+move(c, a);      // Efficient destructive transfer (a becomes 0)
 ```
+
+Procedural primitives map to optimized Brainfuck loops, giving you fine-grained control over tape operations.
+
 
 ## Compilation Pipeline
 
@@ -180,7 +187,7 @@ src/
 
 ### Control Flow
 - `for` loops - Unrolled at compile-time for constant bounds
-- `while` loops - Native Brainfuck loops
+- `while` loops - Unrolled for virtual conditions; otherwise native Brainfuck loops
 - `forn(n)` - Runtime countdown loops
 - `if/else` - Compile-time evaluation when possible
 

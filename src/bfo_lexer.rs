@@ -11,6 +11,9 @@ pub enum BFOToken {
     Print,
     While,
     Free,
+    Ref,
+    Scan,
+    Move,
     
     // Literals
     Number(i32),
@@ -169,6 +172,9 @@ impl<'a> BFOLexer<'a> {
             "print" => BFOToken::Print,
             "while" => BFOToken::While,
             "free" => BFOToken::Free,
+            "ref" => BFOToken::Ref,
+            "scan" => BFOToken::Scan,
+            "move" => BFOToken::Move,
             _ => BFOToken::Identifier(ident),
         }
     }

@@ -8,13 +8,14 @@ pub enum Type {
     Cell,
     Bool,
     Char,
+    String,
     Array(Box<Type>),
 }
 
 impl Type {
     pub fn is_virtual(&self) -> bool {
         match self {
-            Type::Int | Type::Bool | Type::Char => true,
+            Type::Int | Type::Bool | Type::Char | Type::String => true,
             Type::Array(inner) => inner.is_virtual(),
             _ => false,
         }
@@ -46,6 +47,7 @@ pub enum Expr {
         args: Vec<Expr>,
     },
     ArrayLiteral(Vec<Expr>),
+    Getc,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +94,11 @@ pub enum Stmt {
     },
     Group(Vec<Stmt>), // For grouping statements (like multi-var declaration) without scope
     ExprStmt(Expr), // For function calls as statements
+    Return(Expr),
+    Intrinsic {
+        name: Token,
+        args: Vec<Expr>,
+    },
 }
 
 #[derive(Debug, Clone)]

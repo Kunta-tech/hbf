@@ -116,6 +116,7 @@ src/bfo_gen/
 │   ├── emit() / emit_line() / indent()
 │   ├── emit_set() / emit_new() / emit_add() / emit_sub()
 │   ├── materialize_to_cell() - Converts expressions to BFO cells
+│   ├── get_expr_type() - Strict type resolution and function return lookup
 │   └── free_cell()
 │
 ├── expr_fold.rs (120 lines)
@@ -127,7 +128,7 @@ src/bfo_gen/
 ├── stmt_gen.rs (520 lines)
 │   ├── gen_stmt() - Main statement generation
 │   │   ├── Handles all statement types
-│   │   ├── Loop unrolling for constant bounds
+│   │   ├── Loop unrolling for constant bounds (For/While)
 │   │   └── Compile-time if/else evaluation
 │   ├── gen_expr() - Expression code generation
 │   └── gen_expr_simple() - Simple expression emission
@@ -284,8 +285,8 @@ print c
 - Resolves array indexing for literals
 
 ### 3. Loop Unrolling
-- Unrolls `for` loops with constant bounds
-- Eliminates loop overhead entirely
+- Unrolls `for` and `while` loops with constant bounds
+- Eliminates loop overhead entirely for virtual conditions
 
 ### 4. Function Inlining
 - Inlines functions with virtual parameters

@@ -7,13 +7,24 @@ impl BFOGenerator {
         match stmt {
             Stmt::VarDecl { var_type, name, value } => {
                 let folded = self.fold_expr(value);
+                let value_type = self.get_expr_type(&folded);
+
+                if !self.is_compatible(&var_type, &value_type) {
+                    panic!("Type mismatch in declaration of '{}': cannot assign {:?} to {:?}", name, value_type, var_type);
+                }
     
                 match &var_type {
                     Type::Cell => self.materialize_to_cell(&name, folded, true),
                     Type::Array(inner) => {
                         if !inner.is_virtual() {
                             // cell[] is physical: contiguous named cells
-                            if let Expr::ArrayLiteral(elements) = folded {
+                            let elements = match folded {
+                                Expr::ArrayLiteral(el) => el,
+                                Expr::StringLiteral(s) => s.chars().map(Expr::CharLiteral).collect(),
+                                _ => Vec::new(),
+                            };
+
+                            if !elements.is_empty() {
                                 self.arrays.insert(name.clone(), (0, elements.len(), (**inner).clone(), None));
                                 for (i, el) in elements.iter().enumerate() {
                                     let cell_name = self.get_array_var_name(&name, i as i32);
@@ -42,7 +53,20 @@ impl BFOGenerator {
             Stmt::IndexedAssign { name, index, value } => {
                 let folded_val = self.fold_expr(value);
                 let folded_index = self.fold_expr(index);
+                let value_type = self.get_expr_type(&folded_val);
+
                 if let Expr::Number(i) = folded_index {
+                    let mut type_error = None;
+                    if let Some((_, _, elem_type, _)) = self.arrays.get(&name) {
+                        if !self.is_compatible(elem_type, &value_type) {
+                            type_error = Some((elem_type.clone(), value_type.clone()));
+                        }
+                    }
+                    
+                    if let Some((et, vt)) = type_error {
+                        panic!("Type mismatch in indexed assignment to array '{}': cannot assign {:?} to element type {:?}", name, vt, et);
+                    }
+
                     if let Some((_, _, elem_type, literals)) = self.arrays.get_mut(&name) {
                         if !elem_type.is_virtual() {
                             // physical cell[] update
@@ -64,14 +88,35 @@ impl BFOGenerator {
             },
             Stmt::Assign { name, value } => {
                 let folded = self.fold_expr(value);
+                let value_type = self.get_expr_type(&folded);
+
                 // Determine if 'name' is physical or virtual
-                if self.get_variable(&name).is_some() {
+                if let Some(target_val) = self.get_variable(&name) {
+                    let target_type = self.get_expr_type(&target_val);
+                    if !self.is_compatible(&target_type, &value_type) {
+                        panic!("Type mismatch in assignment to virtual variable '{}': cannot assign {:?} to {:?}", name, value_type, target_type);
+                    }
+
                     if self.native_loop_depth > 0 {
                         eprintln!("WARNING: Modifying virtual variable '{}' inside a native loop. This value will not update in the generated BFO.", name);
                     }
                     self.set_variable(&name, folded);
+                } else if self.arrays.contains_key(&name) {
+                     let (_, _, elem_type, _) = self.arrays.get(&name).unwrap();
+                     let target_type = Type::Array(Box::new(elem_type.clone()));
+                     if !self.is_compatible(&target_type, &value_type) {
+                         panic!("Type mismatch in assignment to array '{}': cannot assign {:?} to {:?}", name, value_type, target_type);
+                     }
+                     // For virtual arrays, Assign { name, value } might mean replacing the whole array or it's an error. 
+                     // HBF currently treats Assign(name, value) as scalar assign. 
+                     // If it's an array, it's usually handled by VarDecl or IndexedAssign.
+                     // But let's be strict.
                 } else {
-                    println!("Materializing variable {}: {:?}", name, folded);
+                    // Physical cell
+                    if !self.is_compatible(&Type::Cell, &value_type) {
+                        panic!("Type mismatch in assignment to cell '{}': cannot assign {:?} to Cell", name, value_type);
+                    }
+                    // println!("Materializing variable {}: {:?}", name, folded);
                     self.materialize_to_cell(&name, folded, false);
                 }
             },
@@ -262,38 +307,67 @@ impl BFOGenerator {
                 }
             },
             Stmt::While { condition, body } => {
-                self.indent();
-                self.emit("while ");
-                match &condition {
-                    Expr::Variable(name) => self.emit(name),
-                    Expr::BinaryOp { left, op: _, right: _ } => {
-                        if let Expr::Variable(name) = left.as_ref() {
-                            self.emit(name);
-                        } else {
-                            panic!("Complex comparison not supported");
+                let cond_type = self.get_expr_type(&condition);
+                if cond_type.is_virtual() {
+                    // Unroll the loop if condition is virtual
+                    let mut iterations = 0;
+                    while iterations < 10000 {
+                        let folded = self.fold_expr(condition.clone());
+                        let cond_val = match folded {
+                            Expr::BoolLiteral(b) => b,
+                            Expr::Number(n) => n != 0,
+                            _ => {
+                                panic!("While loop condition with virtual variable must be a compile-time constant for unrolling, got {:?}", folded);
+                            }
+                        };
+
+                        if !cond_val { break; }
+
+                        for s in &body {
+                            self.gen_stmt(s.clone(), false);
                         }
-                    },
-                    _ => panic!("Unsupported while condition"),
+                        
+                        iterations += 1;
+                    }
+
+                    if iterations >= 10000 {
+                        panic!("While loop unrolling exceeded limit (possible infinite loop or too large)");
+                    }
+                } else {
+                    // Physical condition: native BFO while loop
+                    self.indent();
+                    self.emit("while ");
+                    match &condition {
+                        Expr::Variable(name) => self.emit(name),
+                        Expr::BinaryOp { left, op: _, right: _ } => {
+                            if let Expr::Variable(name) = left.as_ref() {
+                                self.emit(name);
+                            } else {
+                                panic!("Complex comparison not supported");
+                            }
+                        },
+                        _ => panic!("Unsupported while condition"),
+                    }
+                    self.emit_line(" {");
+        
+                    self.indent_level += 1;
+                    self.native_loop_depth += 1;
+        
+                    for s in body {
+                        self.gen_stmt(s, false);
+                    }
+                    self.native_loop_depth -= 1;
+                    self.indent_level -= 1;
+        
+                    self.indent();
+                    self.emit_line("}");
                 }
-                self.emit_line(" {");
-    
-                self.indent_level += 1;
-                self.native_loop_depth += 1;
-    
-                for s in body {
-                    self.gen_stmt(s, false);
-                }
-                self.native_loop_depth -= 1;
-                self.indent_level -= 1;
-    
-                self.indent();
-                self.emit_line("}");
             },
             Stmt::ExprStmt(expr) => {
                 if let Expr::FunctionCall { name, args } = expr {
                     if let Some(func_def) = self.functions.get(&name).cloned() {
                         if let Stmt::FuncDecl { params, body, .. } = func_def {
-                             self.inline_function(params, args, body);
+                             self.inline_function(params, args, body, None);
                         }
                     } else {
                         // Function not found, or maybe it's a native/extern?
@@ -374,83 +448,121 @@ impl BFOGenerator {
                     self.gen_stmt(s, false);
                 }
             },
-        }
-    }
-
-    pub(super) fn gen_expr(&mut self, expr: Expr) {
-        match expr {
-            Expr::Number(n) => self.emit(&n.to_string()),
-            Expr::CharLiteral(c) => {
-                if c == '\n' { self.emit("'\\n'"); }
-                else if c == '\t' { self.emit("'\\t'"); }
-                else { self.emit(&format!("'{}'", c)); }
-            },
-            Expr::BoolLiteral(b) => self.emit(&format!("{}", if b { 1 } else { 0 })),
-            Expr::Variable(name) => {
-                if let Some(val) = self.get_variable(&name) {
-                    // Recursively resolve in case of nested virtuals
-                    self.gen_expr(val.clone());
-                } else {
-                    self.emit(&name);
+            Stmt::Return(expr) => {
+                let folded = self.fold_expr(expr);
+                if let Some(Some(dest)) = self.return_stack.last() {
+                    let dest = dest.clone();
+                    self.materialize_to_cell(&dest, folded, false);
                 }
+                // TODO: Early return support would go here
             },
-            Expr::FunctionCall { name, .. } => {
-                panic!("Function calls in expressions are not supported in simulation-only mode: {}. They must be foldable to constants.", name);
-            },
-            Expr::ArrayAccess { array, index } => {
-                if let Expr::Number(i) = &*index {
-                    match &*array {
-                        Expr::Variable(name) => {
-                            // If it's a streaming array, we can return its literal value if known
-                            if let Some((_, _, elem_type, Some(literals))) = self.arrays.get(name) {
-                                if elem_type.is_virtual() {
-                                    if let Some(lit) = literals.get(*i as usize) {
-                                        self.gen_expr(lit.clone());
-                                        return;
-                                    }
-                                }
-                            }
-                            self.emit(&self.get_array_var_name(name, *i));
-                        },
-                        Expr::StringLiteral(s) => {
-                            if let Some(ch) = s.chars().nth(*i as usize) {
-                                if ch == '\n' { self.emit("'\\n'"); }
-                                else if ch == '\t' { self.emit("'\\t'"); }
-                                else { self.emit(&format!("'{}'", ch)); }
-                            } else { panic!("String index out of bounds: {} in {:?}", i, s); }
-                        },
-                        Expr::ArrayLiteral(elements) => {
-                            if let Some(el) = elements.get(*i as usize) {
-                                self.gen_expr(el.clone());
-                            } else { panic!("Array index out of bounds: {} in {:?}", i, elements); }
-                        },
-                        _ => panic!("Complex array indexing not supported"),
+            Stmt::Intrinsic { name, args } => {
+                let validate_target = |gen: &mut Self, arg: &Expr, intrinsic_name: &str| -> String {
+                    let folded = gen.fold_expr(arg.clone());
+                    
+                    // Loopholes Fix: Type-aware validation
+                    let arg_type = gen.get_expr_type(&folded);
+                    if arg_type.is_virtual() {
+                        panic!("\n[Error] Invalid target for {}(): The argument must be a mutable 'cell' or 'cell[]' element, but got a virtual type '{:?}' (value: {:?}).\nHint: 'int', 'char', and 'bool' are virtual types and cannot be targets for procedural primitives. Use normal assignment or math instead.\n", intrinsic_name, arg_type, folded);
                     }
-                } else {
-                    panic!("Only constant array indexing supported");
+
+                    let target_name = gen.get_var_name(&folded);
+                    if target_name.is_empty() {
+                        panic!("\n[Error] Invalid target for {}(): The argument must be a mutable cell or array element (e.g. 'a' or 'arr[0]'), but got '{:?}' (folded to '{:?}').\nHint: Literals like '0' or expressions like 'a + b' cannot be used as targets.\n", intrinsic_name, arg, folded);
+                    }
+                    target_name
+                };
+
+                match name {
+                    Token::Set => {
+                        if args.len() != 2 { panic!("set() requires 2 arguments: target, value"); }
+                        let target_name = validate_target(self, &args[0], "set");
+                        let value = self.fold_expr(args[1].clone());
+
+                        let val_str = self.get_var_name_or_lit(&value);
+                        if val_str.is_empty() {
+                            // Loophole Fix: Support non-variable sources via materialization
+                            self.materialize_to_cell(&target_name, value, false);
+                        } else {
+                            self.indent();
+                            self.emit_line(&format!("set {} {}", target_name, val_str));
+                        }
+                    }
+                    Token::Copy => {
+                        if args.len() != 2 { panic!("copy() requires 2 arguments: dest, src"); }
+                        let dest_name = validate_target(self, &args[0], "copy");
+                        let src_name = validate_target(self, &args[1], "copy");
+                        
+                        self.indent();
+                        self.emit_line(&format!("set {} {}", dest_name, src_name));
+                    }
+                    Token::Move => {
+                        if args.len() != 2 { panic!("move() requires 2 arguments: dest, src"); }
+                        let dest_name = validate_target(self, &args[0], "move");
+                        let src_name = validate_target(self, &args[1], "move");
+                        
+                        self.indent();
+                        self.emit_line(&format!("move {} {}", dest_name, src_name));
+                    }
+                    Token::Clear => {
+                        if args.len() != 1 { panic!("clear() requires 1 argument: target"); }
+                        let target_name = validate_target(self, &args[0], "clear");
+                        self.indent();
+                        self.emit_line(&format!("set {} 0", target_name));
+                    }
+                    Token::Add => {
+                        if args.len() != 2 { panic!("add() requires 2 arguments: target, value"); }
+                        let target_name = validate_target(self, &args[0], "add");
+                        let value = self.fold_expr(args[1].clone());
+
+                        if let Expr::Number(n) = value {
+                            if n < 0 {
+                                self.indent();
+                                self.emit_line(&format!("sub {} {}", target_name, -n));
+                                return;
+                            }
+                        }
+
+                        let val_str = self.get_var_name_or_lit(&value);
+                        if val_str.is_empty() {
+                            // Loophole Fix: Support non-variable sources via materialization
+                            self.materialize_to_cell("__hbf_tmp", value, true);
+                            self.indent();
+                            self.emit_line(&format!("add {} __hbf_tmp", target_name));
+                            self.free_cell("__hbf_tmp");
+                        } else {
+                            self.indent();
+                            self.emit_line(&format!("add {} {}", target_name, val_str));
+                        }
+                    }
+                    Token::Sub => {
+                        if args.len() != 2 { panic!("sub() requires 2 arguments: target, value"); }
+                        let target_name = validate_target(self, &args[0], "sub");
+                        let value = self.fold_expr(args[1].clone());
+
+                        if let Expr::Number(n) = value {
+                            if n < 0 {
+                                self.indent();
+                                self.emit_line(&format!("add {} {}", target_name, -n));
+                                return;
+                            }
+                        }
+
+                        let val_str = self.get_var_name_or_lit(&value);
+                        if val_str.is_empty() {
+                            // Loophole Fix: Support non-variable sources via materialization
+                            self.materialize_to_cell("__hbf_tmp", value, true);
+                            self.indent();
+                            self.emit_line(&format!("sub {} __hbf_tmp", target_name));
+                            self.free_cell("__hbf_tmp");
+                        } else {
+                            self.indent();
+                            self.emit_line(&format!("sub {} {}", target_name, val_str));
+                        }
+                    }
+                    _ => panic!("Unknown intrinsic: {:?}", name),
                 }
-            },
-            Expr::BinaryOp { left, op, right } => {
-                self.emit("(");
-                self.gen_expr(*left);
-                self.emit(&format!(" {} ", match op {
-                    Token::Plus => "+",
-                    Token::Minus => "-",
-                    _ => "?",
-                }));
-                self.gen_expr(*right);
-                self.emit(")");
-            },
-            Expr::MemberAccess { object, member } => {
-                if let Expr::Variable(name) = *object {
-                    if member == "length" {
-                        if let Some((_, len, _, _)) = self.arrays.get(&name) {
-                            self.emit(&len.to_string());
-                        } else { panic!("Undefined array: {}", name); }
-                    } else { panic!("Unknown member: {}", member); }
-                } else { panic!("Member access only supported on variables"); }
-            },
-            _ => panic!("Complex expression not supported in this context"),
+            }
         }
     }
 
@@ -517,6 +629,9 @@ impl BFOGenerator {
                     } else { panic!("Unknown member: {}", member); }
                 } else { panic!("Member access only supported on variables"); }
             },
+            Expr::Getc => {
+                panic!("getc() cannot be generated in simple (runtime) context. It must be materialized.");
+            }
             _ => panic!("Only simple expressions (literals) allowed in BFO 'set' context: {:?}", expr),
         }
     }

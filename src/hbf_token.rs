@@ -16,6 +16,14 @@ pub enum Token {
     Func,
     True,
     False,
+    Return,
+    Getc,
+    Set,
+    Copy,
+    Clear,
+    Add,
+    Sub,
+    Move,
     
     // Built-in functions
     Putc,

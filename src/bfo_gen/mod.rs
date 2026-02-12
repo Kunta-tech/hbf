@@ -1,6 +1,5 @@
 
 use crate::hbf_ast::{Expr, Stmt, Program, Type};
-use crate::hbf_token::Token;
 use std::collections::HashMap;
 
 mod scope;
@@ -17,6 +16,7 @@ pub struct BFOGenerator {
     pub(super) indent_level: usize,
     pub(super) forn_counter: usize,
     pub(super) native_loop_depth: usize,
+    pub(super) return_stack: Vec<Option<String>>,
 }
 
 impl BFOGenerator {
@@ -29,6 +29,7 @@ impl BFOGenerator {
             indent_level: 0,
             forn_counter: 0,
             native_loop_depth: 0,
+            return_stack: Vec::new(),
         }
     }
 

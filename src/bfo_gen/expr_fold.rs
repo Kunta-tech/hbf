@@ -50,6 +50,29 @@ impl BFOGenerator {
                         _ => {}
                     }
                 }
+
+                // Python-style repetition: {0} * 5 or "abc" * 3
+                if op == Token::Star {
+                    match (&left_folded, &right_folded) {
+                        (Expr::ArrayLiteral(elements), Expr::Number(count)) |
+                        (Expr::Number(count), Expr::ArrayLiteral(elements)) => {
+                            let mut repeated = Vec::new();
+                            for _ in 0..*count {
+                                repeated.extend(elements.clone());
+                            }
+                            return Expr::ArrayLiteral(repeated);
+                        }
+                        (Expr::StringLiteral(s), Expr::Number(count)) |
+                        (Expr::Number(count), Expr::StringLiteral(s)) => {
+                            let mut repeated = String::new();
+                            for _ in 0..*count {
+                                repeated.push_str(s);
+                            }
+                            return Expr::StringLiteral(repeated);
+                        }
+                        _ => {}
+                    }
+                }
                 
                 // Can't fold, return the folded operands
                 Expr::BinaryOp {
@@ -111,7 +134,8 @@ impl BFOGenerator {
                     member,
                 }
             },
-            _ => expr, // Other expressions (CharLiteral, StringLiteral, Number) unchanged
+            Expr::Getc => Expr::Getc,
+            _ => expr, // Other expressions (CharLiteral, StringLiteral, Number, etc.) unchanged
         }
     }
 }

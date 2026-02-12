@@ -170,6 +170,14 @@ impl<'a> Lexer<'a> {
             "true" => Token::True,
             "false" => Token::False,
             "putc" => Token::Putc,
+            "return" => Token::Return,
+            "getc" => Token::Getc,
+            "set" => Token::Set,
+            "copy" => Token::Copy,
+            "clear" => Token::Clear,
+            "add" => Token::Add,
+            "sub" => Token::Sub,
+            "move" => Token::Move,
             _ => Token::Identifier(ident),
         }
     }

@@ -3,6 +3,7 @@
     new __hbf_cell_vals_0 65
     new __hbf_cell_vals_1 66
     new __hbf_cell_vals_2 67
+    set __hbf_cell_vals_0 0
     add __hbf_cell_vals_0 __hbf_cell_vals_2
     print __hbf_cell_vals_0
     print __hbf_cell_vals_1
