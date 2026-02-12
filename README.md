@@ -51,7 +51,7 @@ putc("Hello, World!\n");
 
 Compile and run:
 ```bash
-cargo run -- build hello.hbf
+cargo run -- hello.hbf
 # Run hello.bf in any Brainfuck interpreter
 ```
 
