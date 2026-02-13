@@ -142,33 +142,26 @@ for (int i = 0; i < msg.length; i++) {
 
 The `examples/` directory contains comprehensive test cases:
 
-1. **[01_hello_world.hbf](file:///s:/vs%20code/projects/hbf/examples/01_hello_world.hbf)** - Basic output
-2. **[02_virtual_vars.hbf](file:///s:/vs%20code/projects/hbf/examples/02_virtual_vars.hbf)** - Virtual variable folding
-3. **[03_global_folding.hbf](file:///s:/vs%20code/projects/hbf/examples/03_global_folding.hbf)** - Global constant resolution
-4. **[04_loop_unrolling.hbf](file:///s:/vs%20code/projects/hbf/examples/04_loop_unrolling.hbf)** - Loop optimization
-5. **[05_native_loops.hbf](file:///s:/vs%20code/projects/hbf/examples/05_native_loops.hbf)** - Runtime loops with `forn`
-6. **[06_function_inlining.hbf](file:///s:/vs%20code/projects/hbf/examples/06_function_inlining.hbf)** - Function optimization
-7. **[07_physical_arrays.hbf](file:///s:/vs%20code/projects/hbf/examples/07_physical_arrays.hbf)** - Tape-resident arrays
-8. **[08_shorthand_assign.hbf](file:///s:/vs%20code/projects/hbf/examples/08_shorthand_assign.hbf)** - Optimized updates
-9. **[09_complex_expressions.hbf](file:///s:/vs%20code/projects/hbf/examples/09_complex_expressions.hbf)** - Nested arithmetic
-10. **[10_hello_world.hbf](file:///s:/vs%20code/projects/hbf/examples/10_hello_world.hbf)** - Complete program
-11. **[11_bools.hbf](file:///s:/vs%20code/projects/hbf/examples/11_bools.hbf)** - Boolean logic
-12. **[12_test_else_if.hbf](file:///s:/vs%20code/projects/hbf/examples/12_test_else_if.hbf)** - Conditional chains
-13. **[13_multi_decl.hbf](file:///s:/vs%20code/projects/hbf/examples/13_multi_decl.hbf)** - Multi-declarations
+1. **[01_hello.hbf](file:///s:/vs%20code/projects/hbf/examples/01_hello.hbf)** - Basic string output
+2. **[02_vars.hbf](file:///s:/vs%20code/projects/hbf/examples/02_vars.hbf)** - Virtual vs Physical variable distinction
+3. **[03_arrays.hbf](file:///s:/vs%20code/projects/hbf/examples/03_arrays.hbf)** - Physical arrays and constant-time indexing
+4. **[04_loops.hbf](file:///s:/vs%20code/projects/hbf/examples/04_loops.hbf)** - Compile-time vs native Brainfuck loops
+5. **[05_functions.hbf](file:///s:/vs%20code/projects/hbf/examples/05_functions.hbf)** - Function definition and inlining
+6. **[06_echo.hbf](file:///s:/vs%20code/projects/hbf/examples/06_echo.hbf)** - Interactive I/O with optimized `print_str`
 
 ## CLI Commands
 
 ### Compile to BFO
 ```bash
-cargo run -- compile <file.hbf>
+cargo run -- -c <file.hbf>
 ```
 Generates `<file>.bfo` intermediate representation.
 
 ### Build to Brainfuck
 ```bash
-cargo run -- build <file.hbf>
+cargo run -- <file.hbf>
 ```
-Generates both `<file>.bfo` and `<file>.bf`.
+Generates both `<file>.bfo` and `<file>.bf` (default behavior).
 
 ### Run Tests
 ```bash

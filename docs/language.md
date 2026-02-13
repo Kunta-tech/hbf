@@ -14,8 +14,16 @@ HBF (Higher Brainfuck) is a C-like compiled language that targets Brainfuck thro
 - **`type[]`**: Array of the specified type (e.g., `cell[]`, `int[]`, `char[]`).
 
 ### Virtual vs Physical Types
-- **Virtual Types (`int`, `bool`, `char`)**: Exist only in the compiler's symbol table. They are folded into BFO instructions and occupy NO tape space.
-- **Physical Types (`cell`, `cell[]`)**: Map directly to Brainfuck tape cells with stable addresses.
+
+| Property | Virtual Types (`int`, `bool`, `char`) | Physical Types (`cell`, `cell[]`) |
+|----------|---------------------------------------|-----------------------------------|
+| **Location** | Compiler symbol table (compile-time) | Brainfuck tape (runtime) |
+| **Footprint** | **Zero cells** | 1 or more cells |
+| **Indexing** | Constant only | Constant (direct) |
+| **Use Case** | Offsets, loop counters, constants | Runtime state, user input, buffers |
+
+> [!IMPORTANT]
+> **Turing Completeness**: While HBF requires constant indexing for direct cell access (simulating fixed-size buffers), the inclusion of `while` loops and `getc()` ensures that HBF is **Turing-complete**. Complex algorithms can be implemented by using cells as tape pointers or through procedural primitives.
 
 ## Variables
 
@@ -76,6 +84,7 @@ char[] s = "Hi";
 for (int i = 0; i < s.length; i++) {
     putc(s[i]);
 }
+// Unrolls to: print 'H', print 'i'
 ```
 
 ### while Loops

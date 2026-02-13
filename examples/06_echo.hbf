@@ -1,0 +1,41 @@
+// print_str uses a cell cache to minimize tape movement and value changes.
+int cnt = 0, arr[] = {0}*5;
+cell carr[] = {0}*5;
+
+void print_str(char[] s) {
+    for(int i = 0; i < s.length; i++) {
+        int mi = s[i], mp = -1;
+        for(int j = 0; j < cnt; j++) {
+            if(s[i] - arr[j] >= 0 && s[i] - arr[j] < mi) {
+                mi = s[i] - arr[j];
+                mp = j;
+            } else if(arr[j] - s[i] >= 0 && arr[j] - s[i] < mi) {
+                mi = arr[j] - s[i];
+                mp = j;
+            }
+        }
+        if(mp == -1) {
+            arr[cnt] = s[i];
+            carr[cnt] = s[i];
+            mp = cnt;
+            cnt = cnt + 1;
+        } else {
+            add(carr[mp], s[i] - arr[mp]);
+            arr[mp] = s[i];
+        }
+        putc(carr[mp]);
+    }
+}
+
+void main() {
+    print_str("> ");
+    
+    // getc() reads a character from input.
+    cell c = getc();
+    
+    print_str("\nYou typed: ");
+    putc(c);
+    putc('\n');
+}
+
+main();

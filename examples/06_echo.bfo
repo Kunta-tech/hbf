@@ -1,0 +1,45 @@
+new __hbf_cell_carr_0 0
+new __hbf_cell_carr_1 0
+new __hbf_cell_carr_2 0
+new __hbf_cell_carr_3 0
+new __hbf_cell_carr_4 0
+; defined function print_str
+; defined function main
+{
+    {
+        set __hbf_cell_carr_0 '>'
+        print __hbf_cell_carr_0
+        sub __hbf_cell_carr_0 30
+        print __hbf_cell_carr_0
+    }
+    new c 0
+    scan c
+    {
+        set __hbf_cell_carr_1 '\n'
+        print __hbf_cell_carr_1
+        add __hbf_cell_carr_0 57
+        print __hbf_cell_carr_0
+        add __hbf_cell_carr_0 22
+        print __hbf_cell_carr_0
+        add __hbf_cell_carr_0 6
+        print __hbf_cell_carr_0
+        add __hbf_cell_carr_1 22
+        print __hbf_cell_carr_1
+        sub __hbf_cell_carr_0 1
+        print __hbf_cell_carr_0
+        add __hbf_cell_carr_0 5
+        print __hbf_cell_carr_0
+        sub __hbf_cell_carr_0 9
+        print __hbf_cell_carr_0
+        sub __hbf_cell_carr_0 11
+        print __hbf_cell_carr_0
+        sub __hbf_cell_carr_0 1
+        print __hbf_cell_carr_0
+        add __hbf_cell_carr_1 26
+        print __hbf_cell_carr_1
+        sub __hbf_cell_carr_1 26
+        print __hbf_cell_carr_1
+    }
+    print c
+    print '\n'
+}

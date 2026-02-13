@@ -1,0 +1,4 @@
+void main() {
+    putc("Hello, World!\n");
+}
+main();

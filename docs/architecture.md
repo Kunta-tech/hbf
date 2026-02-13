@@ -98,6 +98,18 @@ pub enum Stmt {
 
 The BFO generator is the heart of the compiler, performing aggressive optimizations while generating BFO code. It has been **modularized into 6 focused files**:
 
+### View Intermediate Output
+```bash
+cargo run -- -c example.hbf
+cat example.bfo
+```
+
+### Check Optimization
+Compare source and BFO line counts:
+```bash
+wc -l example.hbf example.bfo
+```
+
 ##### Module Structure
 
 ```

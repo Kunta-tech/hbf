@@ -1,0 +1,16 @@
+; defined function say_hi
+; defined function main
+{
+    new n 3
+    {
+        new count 0
+        add count n
+        while count {
+            print 'H'
+            print 'i'
+            print ' '
+            sub count 1
+        }
+    }
+    print '\n'
+}

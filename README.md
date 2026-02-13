@@ -45,14 +45,14 @@ cargo run -- example.bfo
 ### Hello World Example
 
 ```c
-// hello.hbf
+// 01_hello.hbf
 putc("Hello, World!\n");
 ```
 
 Compile and run:
 ```bash
-cargo run -- hello.hbf
-# Run hello.bf in any Brainfuck interpreter
+cargo run -- examples/01_hello.hbf
+# Run examples/01_hello.bf in any Brainfuck interpreter
 ```
 
 ## Key Features
@@ -205,15 +205,13 @@ src/
 
 ## Examples
 
-See the `examples/` directory for comprehensive examples:
-- `01_hello_world.hbf` - Basic output
-- `02_virtual_vars.hbf` - Virtual variable folding
-- `03_global_folding.hbf` - Global constant resolution
-- `04_loop_unrolling.hbf` - Loop optimization
-- `05_native_loops.hbf` - Runtime loops with `forn`
-- `06_function_inlining.hbf` - Function optimization
-- `07_physical_arrays.hbf` - Tape-resident arrays
-- And more...
+See the `examples/` directory for focused examples:
+- `01_hello.hbf` - Basic string output
+- `02_vars.hbf` - Virtual vs Physical variable distinction
+- `03_arrays.hbf` - Physical arrays and constant-time indexing
+- `04_loops.hbf` - Compile-time vs native Brainfuck loops
+- `05_functions.hbf` - Function definition and inlining
+- `06_echo.hbf` - Interactive I/O with optimized `print_str`
 
 ## Documentation
 

@@ -1,0 +1,17 @@
+void main() {
+    // while loops are native Brainfuck loops [ ]
+    cell count = 5;
+    while(count) {
+        putc('.');
+        sub(count, 1);
+    }
+    putc('\n');
+
+    // for loops are unrolled at compile-time if the bounds are known.
+    // This is useful for fixed iterations.
+    for (int i = 0; i < 3; i++) {
+        putc('!');
+    }
+    putc('\n');
+}
+main();

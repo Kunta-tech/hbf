@@ -1,0 +1,16 @@
+// Functions are inlined during compilation.
+void say_hi(cell count) {
+    while(count) {
+        putc('H');
+        putc('i');
+        putc(' ');
+        sub(count, 1);
+    }
+}
+
+void main() {
+    cell n = 3;
+    say_hi(n);
+    putc('\n');
+}
+main();

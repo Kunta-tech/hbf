@@ -363,14 +363,14 @@ greet("World");
 ### View BFO Output
 
 ```bash
-cargo run -- compile example.hbf
+cargo run -- -c example.hbf
 cat example.bfo
 ```
 
 ### View Brainfuck Output
 
 ```bash
-cargo run -- build example.hbf
+cargo run -- example.hbf
 cat example.bf
 ```
 

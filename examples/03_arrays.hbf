@@ -1,0 +1,14 @@
+void main() {
+    // HBF supports fixed-size physical arrays on the tape.
+    cell[] vals = {65, 66, 67}; // 'A', 'B', 'C'
+    
+    // Indexing MUST use compile-time constants (vvars).
+    int idx = 1;
+    vals[idx] = 68; // 'D'
+    
+    putc(vals[0]); // 'A'
+    putc(vals[1]); // 'D'
+    putc(vals[2]); // 'C'
+    putc('\n');
+}
+main();

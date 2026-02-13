@@ -1,6 +1,0 @@
-; defined function main
-{
-    new result 67
-    print result
-    print '\n'
-}

@@ -1,0 +1,9 @@
+; defined function main
+{
+    new x 5
+    new y 10
+    new z 0
+    add z x
+    add z y
+    print z
+}

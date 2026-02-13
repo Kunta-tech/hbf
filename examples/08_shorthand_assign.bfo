@@ -1,9 +1,0 @@
-; defined function main
-{
-    new A 65
-    add A 5
-    print A
-    add A 5
-    print A
-    print '\n'
-}

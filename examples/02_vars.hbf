@@ -1,0 +1,16 @@
+void main() {
+    // Virtual variables (vvars) are resolved at compile-time.
+    // They are useful for constants and offsets.
+    int a = 10;
+    int b = 20;
+    int c = a + b;
+    
+    // Physical variables (cells) live on the Brainfuck tape.
+    // Use these for runtime values and user input.
+    cell x = 5;
+    cell y = 10;
+    cell z = x + y;
+    
+    putc(z); // Outputs character with ASCII value 15
+}
+main();

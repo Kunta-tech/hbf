@@ -1,9 +1,0 @@
-void main() {
-    putc('H');
-    putc('e');
-    putc('l');
-    putc('l');
-    putc('o');
-    putc('\n');
-}
-main();

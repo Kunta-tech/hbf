@@ -2,8 +2,12 @@
 {
     new count 5
     while count {
-        print '*'
+        print '.'
         sub count 1
     }
+    print '\n'
+    print '!'
+    print '!'
+    print '!'
     print '\n'
 }
