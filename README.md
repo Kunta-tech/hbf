@@ -8,6 +8,8 @@ HBF bridges the gap between high-level programming and Brainfuck by providing:
 - **Familiar Syntax**: C-like language with variables, functions, loops, and arrays
 - **Virtual Types**: Zero-footprint `int`, `char`, and `bool` types that exist only at compile-time
 - **Aggressive Optimization**: Constant folding, polymorphic loop unrolling, and function inlining
+- **Redundant Clear Elimination**: "Initial Zero" assumption and touched-cell tracking for minimal Brainfuck overhead
+- **Advanced State Tracking**: Loop-exit zero guarantees and pointer-reset awareness for aggressive optimization
 - **Intermediate Representation**: Human-readable BFO format for debugging and optimization
 
 ## Quick Start

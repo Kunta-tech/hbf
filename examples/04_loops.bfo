@@ -1,13 +1,40 @@
 ; defined function main
 {
-    new count 5
-    while count {
-        print '.'
+    new count 1
+    goto count
+    set 5
+    goto count
+    loop {
+        new __hbf_tmp 1
+        goto __hbf_tmp
+        set '.'
+print
+free __hbf_tmp
         sub count 1
     }
-    print '\n'
-    print '!'
-    print '!'
-    print '!'
-    print '\n'
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '\n'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '!'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '!'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '!'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '\n'
+print
+free __hbf_tmp
 }

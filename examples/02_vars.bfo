@@ -1,9 +1,48 @@
 ; defined function main
 {
-    new x 5
-    new y 10
-    new z 0
-    add z x
-    add z y
-    print z
+    new x 1
+    goto x
+    set 5
+    new y 1
+    goto y
+    set 10
+    new z 1
+    goto x
+    loop {
+        goto z
+        add 1
+        new __hbf_copy_tmp 1
+        goto __hbf_copy_tmp
+        add 1
+        goto x
+        sub 1
+    }
+    goto __hbf_copy_tmp
+    loop {
+        goto x
+        add 1
+        goto __hbf_copy_tmp
+        sub 1
+    }
+    free __hbf_copy_tmp
+    goto y
+    loop {
+        goto z
+        add 1
+        new __hbf_copy_tmp 1
+        goto __hbf_copy_tmp
+        add 1
+        goto y
+        sub 1
+    }
+    goto __hbf_copy_tmp
+    loop {
+        goto y
+        add 1
+        goto __hbf_copy_tmp
+        sub 1
+    }
+    free __hbf_copy_tmp
+    goto z
+    print
 }

@@ -1,0 +1,6 @@
+new x 1
+goto x
+set 10
+new y 1
+goto y
+set 20

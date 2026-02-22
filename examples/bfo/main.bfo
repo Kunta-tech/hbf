@@ -1,0 +1,15 @@
+; main.bfo
+include "math.bfo"
+
+new num 1
+new den 1
+new quo 1
+new rem 1
+
+goto num
+set 20
+goto den
+set 6
+
+divmod(num, den, quo, rem)
+

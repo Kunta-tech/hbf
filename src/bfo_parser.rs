@@ -42,6 +42,15 @@ impl<'a> BFOParser<'a> {
     fn parse_item(&mut self) -> BFOItem {
         match &self.current_token {
             BFOToken::Func => self.parse_function(),
+            BFOToken::Include => {
+                self.advance();
+                if let BFOToken::String(path) = self.current_token.clone() {
+                    self.advance();
+                    BFOItem::Include(path)
+                } else {
+                    panic!("Expected string path after include");
+                }
+            }
             _ => BFOItem::Statement(self.parse_stmt()),
         }
     }
@@ -85,69 +94,96 @@ impl<'a> BFOParser<'a> {
 
     fn parse_stmt(&mut self) -> BFOStmt {
         match &self.current_token {
-            BFOToken::Set => {
-                self.advance();
-                let name = self.parse_identifier();
-                let value = self.parse_value();
-                BFOStmt::Set { name, value }
-            }
             BFOToken::New => {
                 self.advance();
                 let name = self.parse_identifier();
-                let value = self.parse_value();
-                BFOStmt::New { name, value }
-            }
-            BFOToken::Add => {
-                self.advance();
-                let name = self.parse_identifier();
-                let value = self.parse_value();
-                BFOStmt::Add { name, value }
-            }
-            BFOToken::Sub => {
-                self.advance();
-                let name = self.parse_identifier();
-                let value = self.parse_value();
-                BFOStmt::Sub { name, value }
-            }
-            BFOToken::Print => {
-                self.advance();
-                let value = self.parse_value();
-                BFOStmt::Print { value }
-            }
-            BFOToken::While => {
-                self.advance();
-                let condition = self.parse_identifier();
-                self.eat(BFOToken::LBrace);
-
-                let mut body = Vec::new();
-                while self.current_token != BFOToken::RBrace && self.current_token != BFOToken::EOF {
-                    body.push(self.parse_stmt());
-                }
-
-                self.eat(BFOToken::RBrace);
-                BFOStmt::While { condition, body }
+                let size = match self.parse_value() {
+                    BFOValue::Number(n) => n as usize,
+                    _ => panic!("Expected size number for new"),
+                };
+                BFOStmt::New { name, size }
             }
             BFOToken::Free => {
                 self.advance();
                 let name = self.parse_identifier();
                 BFOStmt::Free { name }
             }
+            BFOToken::At => {
+                self.advance();
+                let value = self.parse_value();
+                BFOStmt::At(value)
+            }
+            BFOToken::Goto => {
+                self.advance();
+                let value = self.parse_value();
+                BFOStmt::Goto { value }
+            }
+            BFOToken::LShift => {
+                self.advance();
+                let n = match self.parse_value() {
+                    BFOValue::Number(n) => n as isize,
+                    _ => panic!("Expected shift amount for lshift"),
+                };
+                BFOStmt::Shift(-n)
+            }
+            BFOToken::RShift => {
+                self.advance();
+                let n = match self.parse_value() {
+                    BFOValue::Number(n) => n as isize,
+                    _ => panic!("Expected shift amount for rshift"),
+                };
+                BFOStmt::Shift(n)
+            }
+            BFOToken::Add => {
+                self.advance();
+                let n = match self.parse_value() {
+                    BFOValue::Number(n) => n as i16,
+                    BFOValue::Char(c) => c as i16,
+                    _ => panic!("Expected numeric value for add"),
+                };
+                BFOStmt::Modify(n)
+            }
+            BFOToken::Sub => {
+                self.advance();
+                let n = match self.parse_value() {
+                    BFOValue::Number(n) => n as i16,
+                    BFOValue::Char(c) => c as i16,
+                    _ => panic!("Expected numeric value for sub"),
+                };
+                BFOStmt::Modify(-n)
+            }
+            BFOToken::Set => {
+                self.advance();
+                let n = match self.parse_value() {
+                    BFOValue::Number(n) => n as u8,
+                    BFOValue::Char(c) => c as u8,
+                    _ => panic!("Expected numeric value for set"),
+                };
+                BFOStmt::Set(n)
+            }
             BFOToken::Ref => {
                 self.advance();
-                let alias = self.parse_identifier();
-                let original = self.parse_identifier();
-                BFOStmt::Ref { alias, original }
+                let name = self.parse_identifier();
+                let value = self.parse_value();
+                BFOStmt::Alias { name, value }
             }
-            BFOToken::Move => {
+            BFOToken::Print => {
                 self.advance();
-                let dest = self.parse_identifier();
-                let src = self.parse_identifier();
-                BFOStmt::Move { dest, src }
+                BFOStmt::Print
             }
             BFOToken::Scan => {
                 self.advance();
-                let name = self.parse_identifier();
-                BFOStmt::Scan { name }
+                BFOStmt::Scan
+            }
+            BFOToken::Loop => {
+                self.advance();
+                self.eat(BFOToken::LBrace);
+                let mut body = Vec::new();
+                while self.current_token != BFOToken::RBrace && self.current_token != BFOToken::EOF {
+                    body.push(self.parse_stmt());
+                }
+                self.eat(BFOToken::RBrace);
+                BFOStmt::Loop(body)
             }
             BFOToken::Identifier(_) => {
                 // Function call
@@ -185,7 +221,17 @@ impl<'a> BFOParser<'a> {
             BFOToken::Identifier(name) => {
                 let val = name.clone();
                 self.advance();
-                BFOValue::Variable(val)
+                let mut offset = 0;
+                if self.current_token == BFOToken::Plus {
+                    self.advance();
+                    if let BFOToken::Number(n) = self.current_token {
+                        offset = n as usize;
+                        self.advance();
+                    } else {
+                        panic!("Expected number after + in variable offset");
+                    }
+                }
+                BFOValue::Variable(val, offset)
             }
             _ => panic!("Expected value, got {:?}", self.current_token),
         }

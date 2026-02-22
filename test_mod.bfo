@@ -1,0 +1,7 @@
+include "lib_mod.bfo"
+new x 1
+goto x
+set 10
+call lib_func(x)
+goto x
+print

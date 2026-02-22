@@ -11,11 +11,13 @@ fn main() {
     let mut input_file = None;
     let mut output_file = None;
     let mut compile_only = false;
+    let mut bfo_to_bf = false;
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "-c" => compile_only = true,
+            "-s" => bfo_to_bf = true,
             "-o" => {
                 if i + 1 < args.len() {
                     output_file = Some(args[i + 1].clone());
@@ -59,8 +61,14 @@ fn main() {
         if compile_only {
             let bfo_out = output_file.unwrap_or_else(|| input_file.replace(".hbf", ".bfo"));
             compile_to_bfo(&input_file, &bfo_out);
+        } else if bfo_to_bf {
+            // This is a bit redundant but explicitly requested for the flag
+            let bfo_out = input_file.replace(".hbf", ".bfo"); 
+            let bf_out = output_file.unwrap_or_else(|| input_file.replace(".hbf", ".bf"));
+            compile_to_bfo(&input_file, &bfo_out);
+            build_bf(&bfo_out, &bf_out);
         } else {
-            // Full pipeline
+            // Full pipeline (default)
             let bfo_out = input_file.replace(".hbf", ".bfo"); 
             let bf_out = output_file.unwrap_or_else(|| input_file.replace(".hbf", ".bf"));
             compile_to_bfo(&input_file, &bfo_out);
@@ -80,7 +88,8 @@ fn main() {
 fn print_usage() {
     eprintln!("Usage: hbf [options] <file>");
     eprintln!("Options:");
-    eprintln!("  -c              Compile to BFO only (default: full build)");
+    eprintln!("  -c              Compile HBF to BFO only");
+    eprintln!("  -s              Compile BFO to BF only");
     eprintln!("  -o <file>       Specify output filename");
     eprintln!("  -h, --help      Display this help message");
 }

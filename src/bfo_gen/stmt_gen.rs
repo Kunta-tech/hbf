@@ -144,71 +144,77 @@ impl BFOGenerator {
                             for (_i, lit) in lits.iter().enumerate() {
                                 self.materialize_to_cell(&name, lit.clone(), false);
                                 self.indent();
-                                self.emit_line(&format!("print {}", name));
+                                self.emit_line(&format!("goto {}", name));
+                                self.indent();
+                                self.emit_line("print");
                             }
                         } else {
-                            // Single physical variable or unknown
                             self.indent();
-                            self.emit_line(&format!("print {}", name));
+                            self.emit_line(&format!("goto {}", name));
+                            self.indent();
+                            self.emit_line("print");
                         }
                     },
                     Expr::ArrayAccess { array, index } => {
-                        // If it's a physical cell array access, we can print the cell name directly
                         if let Expr::Number(i) = index.as_ref() {
                             if let Expr::Variable(array_name) = array.as_ref() {
                                 if let Some((_, _, elem_type, _)) = self.arrays.get(array_name) {
                                     if !elem_type.is_virtual() {
                                         let cell_name = self.get_array_var_name(array_name, *i);
                                         self.indent();
-                                        self.emit_line(&format!("print {}", cell_name));
+                                        self.emit_line(&format!("goto {}", cell_name));
+                                        self.indent();
+                                        self.emit_line("print");
                                         return;
                                     }
                                 }
                             }
                         }
             
-                        // Otherwise fall back to materialization
                         self.materialize_to_cell("__hbf_tmp", Expr::ArrayAccess { array, index }, true);
                         self.indent();
-                        self.emit_line("print __hbf_tmp");
+                        self.emit_line("goto __hbf_tmp");
+                        self.indent();
+                        self.emit_line("print");
                         self.indent();
                         self.emit_line("free __hbf_tmp");
                     },
                     Expr::Number(n) => {
-                        self.indent();
-                        self.emit_line(&format!("print {}", n));
+                        self.materialize_to_cell("__hbf_tmp", Expr::Number(n), true);
+                        self.emit_line("print");
+                        self.emit_line("free __hbf_tmp");
                     },
                     Expr::CharLiteral(c) => {
-                        self.indent();
-                        self.emit_line(&format!("print '{}'", c.escape_default()));
+                        self.materialize_to_cell("__hbf_tmp", Expr::CharLiteral(c), true);
+                        self.emit_line("print");
+                        self.emit_line("free __hbf_tmp");
                     },
                     Expr::StringLiteral(s) => {
                         for ch in s.chars() {
-                            self.indent();
-                            self.emit_line(&format!("print '{}'", ch.escape_default()));
+                            self.materialize_to_cell("__hbf_tmp", Expr::CharLiteral(ch), true);
+                            self.emit_line("print");
+                            self.emit_line("free __hbf_tmp");
                         }
                     },
                     Expr::ArrayLiteral(elements) => {
                         for el in elements {
-                            self.indent();
-                            self.emit("print ");
-                            self.gen_expr_simple(el.clone());
-                            self.emit_line("");
+                            self.materialize_to_cell("__hbf_tmp", el.clone(), true);
+                            self.emit_line("print");
+                            self.emit_line("free __hbf_tmp");
                         }
                     },
                     _ => {
-                        // Complex expression materialization
-                        // Use local 'tmp' cell for BFO printing
                         self.materialize_to_cell("__hbf_tmp", folded, true);
                         self.indent();
-                        self.emit_line("print __hbf_tmp");
+                        self.emit_line("goto __hbf_tmp");
+                        self.indent();
+                        self.emit_line("print");
                         self.indent();
                         self.emit_line("free __hbf_tmp");
                     }
                 }
             },
             Stmt::For { init, condition, update, body } => {
-                // for(;;) is strictly for unfolding (simulation)
                 self.push_scope();
                 if let Some(i) = init {
                     self.gen_stmt(*i.clone(), false);
@@ -216,149 +222,94 @@ impl BFOGenerator {
     
                 let mut iterations = 0;
                 while iterations < 10000 {
-
                     let cond_val = if let Some(cond) = &condition {
                         let folded = self.fold_expr(cond.clone());
-                        
                         match folded {
                             Expr::BoolLiteral(b) => b,
                             Expr::Number(n) => n != 0,
-                            _ => {
-                                panic!("For loop condition must be a compile-time constant for unfolding, got {:?}", folded);
-                            }
+                            _ => panic!("For loop condition must be a compile-time constant for unfolding"),
                         }
                     } else {
                         true
                     };
 
                     if !cond_val { break; }
-        
                     for s in &body {
                         self.gen_stmt(s.clone(), false);
                     }
-        
                     if let Some(ref u) = update {
                         self.gen_stmt(*u.clone(), false);
                     }
                     iterations += 1;
                 }
-    
                 if iterations >= 10000 {
-                    panic!("Loop unrolling exceeded limit (possible infinite loop or too large)");
+                    panic!("Loop unrolling exceeded limit");
                 }
                 self.pop_scope();
             },
             Stmt::Forn { count, body } => {
                 let folded_count = self.fold_expr(count.clone());
-    
-                // Determine the loop counter name
-                let mut is_var = false;
-                let name = match &count {
-                    Expr::Variable(n) => {
-                        if let Some(_val) = self.get_variable(n) {
-                            // Generate an anonymous counter
-                            let for_name = format!("__hbf_forn_{}", self.forn_counter);
-                            self.forn_counter += 1;
-                            is_var = true;
-                            for_name
-                        } else {
-                            n.clone()
-                        }
-                    },
-                    _ => {
-                        // Generate an anonymous counter
-                        let n = format!("__hbf_forn_{}", self.forn_counter);
-                        self.forn_counter += 1;
-                        is_var = true;
-                        n
-                    }
-                };
-
-                // Generate native countdown loop: set n value; while n { body; sub n 1 }
-                if is_var { 
-                    self.materialize_to_cell(&name, folded_count, true); 
-                } else {
-                    self.materialize_to_cell(&name, folded_count, false); 
-                }
+                let name = format!("__hbf_forn_{}", self.forn_counter);
+                self.forn_counter += 1;
+                self.materialize_to_cell(&name, folded_count, true); 
     
                 self.indent();
-                self.emit_line(&format!("while {} {{", name));
+                self.emit_line(&format!("goto {}", name));
+                self.indent();
+                self.emit_line("loop {");
     
                 self.indent_level += 1;
                 self.native_loop_depth += 1;
-
                 for s in body {
                     self.gen_stmt(s, false);
                 }
                 self.native_loop_depth -= 1;
-    
-                // Decrement counter
                 self.emit_sub(&name, "1");
                 self.indent_level -= 1;
     
                 self.indent();
                 self.emit_line("}");
-                if is_var {
-                    self.indent();
-                    self.emit_line(&format!("free {}", name));
-                }
-                if is_var {
-                    self.forn_counter -= 1;
-                }
+                self.indent();
+                self.emit_line(&format!("free {}", name));
             },
             Stmt::While { condition, body } => {
                 let cond_type = self.get_expr_type(&condition);
                 if cond_type.is_virtual() {
-                    // Unroll the loop if condition is virtual
                     let mut iterations = 0;
                     while iterations < 10000 {
                         let folded = self.fold_expr(condition.clone());
                         let cond_val = match folded {
                             Expr::BoolLiteral(b) => b,
                             Expr::Number(n) => n != 0,
-                            _ => {
-                                panic!("While loop condition with virtual variable must be a compile-time constant for unrolling, got {:?}", folded);
-                            }
+                            _ => panic!("While loop condition with virtual variable must be a compile-time constant"),
                         };
-
                         if !cond_val { break; }
-
                         for s in &body {
                             self.gen_stmt(s.clone(), false);
                         }
-                        
                         iterations += 1;
                     }
-
-                    if iterations >= 10000 {
-                        panic!("While loop unrolling exceeded limit (possible infinite loop or too large)");
-                    }
                 } else {
-                    // Physical condition: native BFO while loop
+                    let cond_name = match &condition {
+                        Expr::Variable(name) => name.to_string(),
+                        _ => {
+                            let tmp = format!("__hbf_while_cond_{}", self.forn_counter);
+                            self.forn_counter += 1;
+                            self.materialize_to_cell(&tmp, condition, true);
+                            tmp
+                        }
+                    };
                     self.indent();
-                    self.emit("while ");
-                    match &condition {
-                        Expr::Variable(name) => self.emit(name),
-                        Expr::BinaryOp { left, op: _, right: _ } => {
-                            if let Expr::Variable(name) = left.as_ref() {
-                                self.emit(name);
-                            } else {
-                                panic!("Complex comparison not supported");
-                            }
-                        },
-                        _ => panic!("Unsupported while condition"),
-                    }
-                    self.emit_line(" {");
-        
+                    self.emit_line(&format!("goto {}", cond_name));
+                    self.indent();
+                    self.emit_line("loop {");
                     self.indent_level += 1;
                     self.native_loop_depth += 1;
-        
                     for s in body {
                         self.gen_stmt(s, false);
                     }
                     self.native_loop_depth -= 1;
                     self.indent_level -= 1;
-        
                     self.indent();
                     self.emit_line("}");
                 }

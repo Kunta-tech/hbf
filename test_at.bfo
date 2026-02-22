@@ -1,0 +1,12 @@
+; test_at.bfo
+new a 1
+new b 1
+
+goto a
+set 10
+rshift 1 ; now at b
+sub 1
+@ a ; forcefully set to a without emitting <
+add 5
+; final BF should be: ++++++++++[->-]>+++++
+; (assuming a and b are adjacent and a is at 0)

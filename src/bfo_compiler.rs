@@ -1,411 +1,299 @@
-
-use crate::bfo_ast::{BFOProgram, BFOItem, BFOValue, BFOStmt};
+use crate::bfo_ast::*;
 use crate::ir::BFO;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct BFOCompiler {
     instructions: Vec<BFO>,
-    scopes: Vec<HashMap<String, usize>>,
+    variables: Vec<(String, usize, usize, bool)>, // (name, address, size, owned)
+    scope_marks: Vec<usize>,                       // indices into variables stack
     functions: HashMap<String, (Vec<String>, Vec<BFOStmt>)>,
     current_pointer: usize,
     next_free_cell: usize,
-    free_pool: Vec<usize>,
+    free_pool: Vec<(usize, usize)>, // (address, size)
+    touched_cells: HashSet<usize>,
 }
 
 impl BFOCompiler {
     pub fn new() -> Self {
         BFOCompiler {
             instructions: Vec::new(),
-            scopes: vec![HashMap::new()], // global scope
+            variables: Vec::new(),
+            scope_marks: vec![0],
             functions: HashMap::new(),
             current_pointer: 0,
             next_free_cell: 0,
             free_pool: Vec::new(),
-        }
-    }
-    fn enter_scope(&mut self) {
-        self.scopes.push(HashMap::new());
-    }
-
-    fn exit_scope(&mut self) {
-        if let Some(scope) = self.scopes.pop() {
-            for (_, cell) in scope {
-                self.free_cell(cell);
-            }
+            touched_cells: HashSet::new(),
         }
     }
 
-    pub fn compile(&mut self, program: BFOProgram) -> Vec<BFO> {
+    pub fn compile(&mut self, program: BFOProgram, base_dir: &std::path::Path) -> Vec<BFO> {
+        let all_items = self.flatten_program(program, base_dir);
+        
         // First pass: collect functions
-        for item in &program.items {
+        for item in &all_items {
             if let BFOItem::Function { name, params, body } = item {
                 self.functions.insert(name.clone(), (params.clone(), body.clone()));
             }
         }
 
         // Second pass: generate code for top-level items
-        for item in program.items {
+        for item in all_items {
             match item {
                 BFOItem::Statement(stmt) => {
                     self.compile_stmt(stmt);
                 }
-                BFOItem::Function { .. } => {} // Handled in first pass
+                _ => {}
             }
         }
 
         self.instructions.clone()
     }
 
+    fn flatten_program(&mut self, program: BFOProgram, current_dir: &std::path::Path) -> Vec<BFOItem> {
+        let mut flattened = Vec::new();
+        for item in program.items {
+            if let BFOItem::Include(path) = item {
+                let full_path = current_dir.join(&path);
+                let source = std::fs::read_to_string(&full_path).expect(&format!("Failed to read include file: {}", full_path.display()));
+                let lexer = crate::bfo_lexer::BFOLexer::new(&source);
+                let mut parser = crate::bfo_parser::BFOParser::new(lexer);
+                let sub_program = parser.parse();
+                let sub_dir = full_path.parent().unwrap_or(std::path::Path::new("."));
+                flattened.extend(self.flatten_program(sub_program, sub_dir));
+            } else {
+                flattened.push(item);
+            }
+        }
+        flattened
+    }
+
     fn emit(&mut self, op: BFO) {
+        self.touched_cells.insert(self.current_pointer);
         self.instructions.push(op);
     }
 
-    fn allocate_cell(&mut self) -> usize {
-        if let Some(cell) = self.free_pool.pop() {
-            // println!("Allocating cell {} from pool", cell);
-            cell
-        } else {
-            let cell = self.next_free_cell;
-            self.next_free_cell += 1;
-            // println!("Allocating cell {} from next_free_cell", cell);
-            cell
-        }
-    }
-
-    fn free_cell(&mut self, cell: usize) {
-        // println!("Freeing cell {}", cell);
-        self.free_pool.push(cell);
-    }
-
-    fn get_or_allocate_cell(&mut self, name: &str) -> usize {
-        // Search from inner scope → outer
-        if let Some(scope) = self.scopes.last_mut() {
-            if let Some(&cell) = scope.get(name) {
-                return cell;
-            }
-        }
-
-        // Not found → allocate in current scope
-        let cell = self.allocate_cell();
-        self.scopes
-            .last_mut()
-            .unwrap()
-            .insert(name.to_string(), cell);
-
-        cell
-    }
-
-    fn get_cell(&mut self, name: &str) -> Option<usize> {
-        // Search from inner scope → outer
-        for scope in self.scopes.iter().rev() {
-            if let Some(&cell) = scope.get(name) {
-                return Some(cell);
-            }
-        }
-        None
-    }
-
-
     fn move_to(&mut self, target: usize) {
-        if target > self.current_pointer {
-            self.emit(BFO::MoveRight(target - self.current_pointer));
-        } else if target < self.current_pointer {
-            self.emit(BFO::MoveLeft(self.current_pointer - target));
+        if target != self.current_pointer {
+            self.emit(BFO::Shift(target as isize - self.current_pointer as isize));
+            self.current_pointer = target;
         }
-        self.current_pointer = target;
     }
 
-    fn emit_value_into(&mut self, value: BFOValue, target: usize) {
+    fn get_var_info(&self, name: &str) -> (usize, usize) {
+        self.variables.iter().rev()
+            .find(|(n, _, _, _)| n == name)
+            .map(|(_, addr, size, _)| (*addr, *size))
+            .expect(&format!("Undefined variable in BFO: {}", name))
+    }
+
+    fn resolve_value(&self, value: &BFOValue) -> (usize, usize) {
         match value {
-            BFOValue::Number(n) => {
-                self.move_to(target);
-                if n > 0 {
-                    self.emit(BFO::Add(n as u8));
-                } else if n < 0 {
-                    self.emit(BFO::Sub((-n) as u8));
+            BFOValue::Variable(v, offset) => {
+                let (addr, size) = self.get_var_info(v);
+                if *offset >= size {
+                    panic!("Offset {} out of bounds for variable {} (size {})", offset, v, size);
                 }
+                (addr + *offset, size - *offset)
             }
-            BFOValue::Char(c) => {
-                self.move_to(target);
-                self.emit(BFO::Add(c as u8));
-            }
-            BFOValue::Variable(name) => {
-                let src = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
-                self.copy_cell(src, target);
-            }
+            BFOValue::Number(n) => (*n as usize, 1),
+            BFOValue::Char(c) => (*c as usize, 1),
         }
     }
 
-    fn copy_cell(&mut self, src: usize, dest: usize) {
-        if src == dest { return; }
-        
-        // BF non-destructive copy using 1 temp cell
-        let temp = self.allocate_cell();
-
-        // Ensure temp is clear
-        self.move_to(temp);
-        self.emit(BFO::Clear);
-
-        // Move src to dest and temp
-        self.move_to(src);
-        let mut move_body = Vec::new();
-        move_body.push(BFO::Sub(1));
-        
-        // Add to dest
-        let diff_dest = if dest > src { BFO::MoveRight(dest - src) } else { BFO::MoveLeft(src - dest) };
-        move_body.push(diff_dest.clone());
-        move_body.push(BFO::Add(1));
-        
-        // Add to temp
-        let diff_temp = if temp > dest { BFO::MoveRight(temp - dest) } else { BFO::MoveLeft(dest - temp) };
-        move_body.push(diff_temp.clone());
-        move_body.push(BFO::Add(1));
-        
-        // Back to src
-        let rev_temp = if temp > src { BFO::MoveLeft(temp - src) } else { BFO::MoveRight(src - temp) };
-        move_body.push(rev_temp);
-
-        self.emit(BFO::Loop(move_body));
-
-        // Restore src from temp
-        self.move_to(temp);
-        let mut restore_body = Vec::new();
-        restore_body.push(BFO::Sub(1));
-        
-        let diff_src = if temp > src { BFO::MoveLeft(temp - src) } else { BFO::MoveRight(src - temp) };
-        restore_body.push(diff_src.clone());
-        restore_body.push(BFO::Add(1));
-        
-        let rev_src = if temp > src { BFO::MoveRight(temp - src) } else { BFO::MoveLeft(src - temp) };
-        restore_body.push(rev_src);
-        
-        self.emit(BFO::Loop(restore_body));
-
-        self.free_cell(temp); // Reuse temp for future operations
+    fn auto_free_scope(&mut self) {
+        let mark = self.scope_marks.pop().expect("Underflow in scope marks");
+        while self.variables.len() > mark {
+            let (_, addr, size, owned) = self.variables.pop().unwrap();
+            if owned {
+                self.free_pool.push((addr, size));
+            }
+        }
+        self.merge_free_pool();
     }
 
-    fn handle_call(&mut self, name: &str, args: Vec<BFOValue>) {
-        if let Some((params, body)) = self.functions.get(name).cloned() {
-
-            // Create function scope
-            self.enter_scope();
-
-            for (i, param) in params.iter().enumerate() {
-                if let Some(arg) = args.get(i) {
-
-                    let cell = match arg {
-                        BFOValue::Variable(v) => {
-                            // Use your existing scoped resolver
-                            self.get_cell(v).expect(&format!("Undefined argument variable: {}", v))
-                        }
-
-                        BFOValue::Number(_) | BFOValue::Char(_) => {
-                            let cell = self.allocate_cell();
-
-                            self.move_to(cell);
-                            self.emit(BFO::Clear);
-                            self.emit_value_into(arg.clone(), cell);
-
-                            cell
-                        }
-                    };
-
-                    self.scopes
-                        .last_mut()
-                        .unwrap()
-                        .insert(param.clone(), cell);
+    fn prepare_call_arg(&mut self, arg: &BFOValue, temps: &mut Vec<(usize, usize)>) -> (usize, usize) {
+        match arg {
+            BFOValue::Variable(v, offset) => {
+                let (addr, size) = self.get_var_info(v);
+                if *offset >= size {
+                    panic!("Offset {} out of bounds for variable {} (size {})", offset, v, size);
                 }
+                (addr + *offset, size - *offset)
             }
+            BFOValue::Number(n) => self.allocate_temp_const(*n as i16, temps),
+            BFOValue::Char(c) => self.allocate_temp_const(*c as i16, temps),
+        }
+    }
 
-            for stmt in body {
-                self.compile_stmt(stmt);
+    fn allocate_temp_const(&mut self, val: i16, temps: &mut Vec<(usize, usize)>) -> (usize, usize) {
+        let addr = self.allocate_segment(1);
+        let saved_ptr = self.current_pointer;
+        self.move_to(addr);
+        if self.touched_cells.contains(&addr) {
+            self.emit(BFO::Clear);
+        }
+        self.emit(BFO::Modify(val));
+        self.move_to(saved_ptr);
+        temps.push((addr, 1));
+        (addr, 1)
+    }
+
+    fn allocate_segment(&mut self, size: usize) -> usize {
+        // LIFO free pool allocation: check the last element first
+        if let Some(idx) = self.free_pool.iter().rposition(|&(_, f_size)| f_size >= size) {
+            let (f_addr, f_size) = self.free_pool.remove(idx);
+            if f_size > size {
+                // Return remainder to pool (LIFO)
+                self.free_pool.push((f_addr + size, f_size - size));
+                self.merge_free_pool();
             }
-
-            // Scope exit frees everything
-            self.exit_scope();
-
+            f_addr
         } else {
-            panic!("Undefined function call in BFO: {}", name);
+            let addr = self.next_free_cell;
+            self.next_free_cell += size;
+            addr
         }
+    }
+
+    fn merge_free_pool(&mut self) {
+        if self.free_pool.len() < 2 {
+            return;
+        }
+        self.free_pool.sort_by_key(|&(addr, _)| addr);
+        
+        let mut merged = Vec::new();
+        let (mut cur_addr, mut cur_size) = self.free_pool[0];
+        
+        for i in 1..self.free_pool.len() {
+            let (next_addr, next_size) = self.free_pool[i];
+            if cur_addr + cur_size == next_addr {
+                cur_size += next_size;
+            } else {
+                merged.push((cur_addr, cur_size));
+                cur_addr = next_addr;
+                cur_size = next_size;
+            }
+        }
+        merged.push((cur_addr, cur_size));
+        self.free_pool = merged;
     }
 
     fn compile_stmt(&mut self, stmt: BFOStmt) {
         match stmt {
-            BFOStmt::Set { name, value } => {
-                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
-                self.move_to(cell);
-                self.emit(BFO::Clear);
-                self.emit_value_into(value, cell);
-            }
-            BFOStmt::New { name, value } => {
-                let cell = self.get_or_allocate_cell(&name);
-                self.move_to(cell);
-                self.emit(BFO::Clear);
-                self.emit_value_into(value, cell);
-            }
-            BFOStmt::Add { name, value } => {
-                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
-                self.emit_value_into(value, cell);
-            }
-            BFOStmt::Sub { name, value } => {
-                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
-                match value {
-                    BFOValue::Number(n) => {
-                        self.move_to(cell);
-                        self.emit(BFO::Sub(n as u8));
-                    }
-                    BFOValue::Char(c) => {
-                        self.move_to(cell);
-                        self.emit(BFO::Sub(c as u8));
-                    }
-                    BFOValue::Variable(v) => {
-                        let src = self.get_cell(&v).expect(&format!("Undefined variable: {}", v));
-                        self.sub_variable(src, cell);
-                    }
-                }
-            }
-            BFOStmt::Print { value } => {
-                match value {
-                    BFOValue::Variable(name) => {
-                        let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
-                        self.move_to(cell);
-                        self.emit(BFO::Print);
-                    }
-                    BFOValue::Number(n) => {
-                        // Temp cell for printing literal
-                        let cell = self.allocate_cell();
-                        self.move_to(cell);
-                        self.emit(BFO::Clear);
-                        self.emit(BFO::Add(n as u8));
-                        self.emit(BFO::Print);
-                        self.free_cell(cell);
-                    }
-                    BFOValue::Char(c) => {
-                        let cell = self.allocate_cell();
-                        self.move_to(cell);
-                        self.emit(BFO::Clear);
-                        self.emit(BFO::Add(c as u8));
-                        self.emit(BFO::Print);
-                        self.free_cell(cell);
-                    }
-                }
-            }
-            BFOStmt::While { condition, body } => {
-                let cond_cell = self.get_cell(&condition).expect(&format!("Undefined variable: {}", condition));
-                self.move_to(cond_cell);
+            BFOStmt::New { name, size } => {
+                let cell = self.allocate_segment(size);
+                self.variables.push((name, cell, size, true));
                 
-                let parent_instructions = std::mem::replace(&mut self.instructions, Vec::new());
-                self.enter_scope();
+                let saved_ptr = self.current_pointer;
+                for i in 0..size {
+                    let addr = cell + i;
+                    if self.touched_cells.contains(&addr) {
+                        self.move_to(addr);
+                        self.emit(BFO::Clear);
+                    }
+                }
+                self.move_to(saved_ptr);
+            }
+            BFOStmt::Free { name } => {
+                let idx = self.variables.iter().rposition(|(n, _, _, _)| n == &name);
+                if let Some(idx) = idx {
+                    let mut reclaimed = None;
+                    if let Some((_, addr, size, ref mut owned)) = self.variables.get_mut(idx) {
+                        if *owned {
+                            reclaimed = Some((*addr, *size));
+                            *owned = false;
+                        }
+                    }
+                    if let Some((addr, size)) = reclaimed {
+                        self.free_pool.push((addr, size));
+                        self.merge_free_pool();
+                    }
+                }
+            }
+            BFOStmt::Goto { value } => {
+                let (addr, _) = self.resolve_value(&value);
+                self.move_to(addr);
+            }
+            BFOStmt::At(value) => {
+                let (addr, _) = self.resolve_value(&value);
+                self.current_pointer = addr;
+                self.emit(BFO::ForceGoto(addr));
+            }
+            BFOStmt::Shift(n) => {
+                self.emit(BFO::Shift(n));
+                if n > 0 {
+                    self.current_pointer += n as usize;
+                } else {
+                    self.current_pointer = self.current_pointer.saturating_sub(n.unsigned_abs());
+                }
+            }
+            BFOStmt::Modify(n) => {
+                self.emit(BFO::Modify(n));
+            }
+            BFOStmt::Set(n) => {
+                if n == 0 {
+                    self.emit(BFO::Clear);
+                } else {
+                    self.emit(BFO::Clear);
+                    if n <= 128 {
+                        self.emit(BFO::Modify(n as i16));
+                    } else {
+                        self.emit(BFO::Modify(-(256i16 - n as i16)));
+                    }
+                }
+            }
+            BFOStmt::Print => {
+                self.emit(BFO::Print);
+            }
+            BFOStmt::Scan => {
+                self.emit(BFO::Scan);
+            }
+            BFOStmt::Loop(body) => {
+                let saved_instructions = std::mem::replace(&mut self.instructions, Vec::new());
+                
                 for s in body {
                     self.compile_stmt(s);
                 }
-                self.exit_scope();
-                // BF Loop requires head to be at cond_cell at the start and end of block.
-                self.move_to(cond_cell);
                 
-                let loop_ops = std::mem::replace(&mut self.instructions, parent_instructions);
-                self.emit(BFO::Loop(loop_ops));
+                let loop_instructions = std::mem::replace(&mut self.instructions, saved_instructions);
+                self.emit(BFO::Loop(loop_instructions));
             }
             BFOStmt::Call { name, args } => {
-                self.handle_call(&name, args);
-            }
-            BFOStmt::Free { name } => {
-                let cell = self.get_cell(&name).expect(&format!("Undefined variable: {}", name));
-                self.free_cell(cell);
-            }
-            BFOStmt::Ref { alias, original } => {
-                let cell = self.get_cell(&original).expect(&format!("Undefined variable to ref: {}", original));
-                self.scopes.last_mut().unwrap().insert(alias, cell);
-            }
-            BFOStmt::Scan { name } => {
-                let cell = self.get_cell(&name).expect(&format!("Undefined variable for scan: {}", name));
-                self.move_to(cell);
-                self.emit(BFO::Scan);
-            }
-            BFOStmt::Move { dest, src } => {
-                let dest_cell = self.get_cell(&dest).expect(&format!("Undefined variable: {}", dest));
-                let src_cell = self.get_cell(&src).expect(&format!("Undefined variable: {}", src));
-                
-                if dest_cell == src_cell { return; }
+                if let Some((params, body)) = self.functions.get(&name).cloned() {
+                    let mut temps_to_free = Vec::new();
+                    self.scope_marks.push(self.variables.len());
 
-                // 1. Clear dest
-                self.move_to(dest_cell);
-                self.emit(BFO::Clear);
+                    for (i, param_name) in params.iter().enumerate() {
+                        if i < args.len() {
+                            let info = self.prepare_call_arg(&args[i], &mut temps_to_free);
+                            self.variables.push((param_name.clone(), info.0, info.1, false));
+                        }
+                    }
 
-                // 2. Move src to dest: while src { sub src 1; move_to dest; add dest 1; move_to src }
-                self.move_to(src_cell);
-                let mut body = Vec::new();
-                body.push(BFO::Sub(1));
-                
-                let diff = if dest_cell > src_cell {
-                    BFO::MoveRight(dest_cell - src_cell)
-                } else {
-                    BFO::MoveLeft(src_cell - dest_cell)
-                };
-                body.push(diff.clone());
-                body.push(BFO::Add(1));
-                
-                let rev = if dest_cell > src_cell {
-                    BFO::MoveLeft(dest_cell - src_cell)
-                } else {
-                    BFO::MoveRight(src_cell - dest_cell)
-                };
-                body.push(rev);
-                
-                self.emit(BFO::Loop(body));
+                    for s in body {
+                        self.compile_stmt(s);
+                    }
+                    
+                    self.auto_free_scope();
+
+                    for (addr, size) in temps_to_free {
+                        self.free_pool.push((addr, size));
+                    }
+                    self.merge_free_pool();
+                }
             }
             BFOStmt::Block(stmts) => {
-                self.enter_scope();
-                for stmt in stmts {
-                    self.compile_stmt(stmt);
+                self.scope_marks.push(self.variables.len());
+                for s in stmts {
+                    self.compile_stmt(s);
                 }
-                self.exit_scope();
+                self.auto_free_scope();
+            }
+            BFOStmt::Alias { name, value } => {
+                let (addr, size) = self.resolve_value(&value);
+                self.variables.push((name, addr, size, false));
             }
         }
-    }
-
-    fn sub_variable(&mut self, src: usize, dest: usize) {
-        // Destructive subtract src from dest. 
-        // Note: src will be 0 after this.
-        // If we want non-destructive, we'd need a temp cell.
-        // BFO `sub` is typically used for things like `sub n 1` where n is counter.
-        // If it's a variable-to-variable sub, we should probably be non-destructive.
-        
-        let temp = self.allocate_cell();
-        self.move_to(temp);
-        self.emit(BFO::Clear);
-
-        self.move_to(src);
-        let mut sub_body = Vec::new();
-        sub_body.push(BFO::Sub(1));
-
-        let diff_dest = if dest > src { BFO::MoveRight(dest - src) } else { BFO::MoveLeft(src - dest) };
-        sub_body.push(diff_dest.clone());
-        sub_body.push(BFO::Sub(1));
-        
-        let diff_temp = if temp > dest { BFO::MoveRight(temp - dest) } else { BFO::MoveLeft(dest - temp) };
-        sub_body.push(diff_temp.clone());
-        sub_body.push(BFO::Add(1));
-        
-        let rev_temp = if temp > src { BFO::MoveLeft(temp - src) } else { BFO::MoveRight(src - temp) };
-        sub_body.push(rev_temp);
-
-        self.emit(BFO::Loop(sub_body));
-
-        // Restore src from temp
-        self.move_to(temp);
-        let mut restore_body = Vec::new();
-        restore_body.push(BFO::Sub(1));
-        
-        let diff_src = if temp > src { BFO::MoveLeft(temp - src) } else { BFO::MoveRight(src - temp) };
-        restore_body.push(diff_src.clone());
-        restore_body.push(BFO::Add(1));
-        
-        let rev_src = if temp > src { BFO::MoveRight(temp - src) } else { BFO::MoveLeft(src - temp) };
-        restore_body.push(rev_src);
-        
-        self.emit(BFO::Loop(restore_body));
-
-        self.free_cell(temp);
     }
 }

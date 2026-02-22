@@ -1,0 +1,88 @@
+; math.bfo
+; Reusable math algorithms
+
+func add_to(a, b) {
+    ; Add two numbers
+    new r 1
+    goto r
+    set 0
+    goto a
+    loop {
+        goto b
+        add 1
+        goto r
+        add 1
+        goto a
+        sub 1
+    }
+    goto r
+    loop {
+        goto a
+        add 1
+        goto r
+        sub 1
+    }
+}
+
+func sub_to(a, b) {
+    ; Subtract two numbers
+    new r 1
+    goto r
+    set 0
+    goto a
+    loop {
+        goto b
+        sub 1
+        goto r
+        add 1
+        goto a
+        sub 1
+    }
+    goto r
+    loop {
+        goto a
+        add 1
+        goto r
+        sub 1
+    }
+}
+
+func divmod(n, d, q, r) {
+    ; Assume n is numerator, d is denominator
+    ; q is quotient, r is remainder
+    
+    new m 7
+    ; m:= 0 n d 0 0 0 0
+    ; m<= 0 n d-n%d n%d n/d 0 0
+
+    add_to(d, m+2)
+    add_to(n, m+1)
+    goto m+1
+    loop {
+        sub 1
+        rshift 1
+        sub 1
+        loop {
+            rshift 1
+            add 1
+            rshift 2
+        }
+        rshift 1
+        loop {
+            add 1
+            loop {
+                sub 1
+                lshift 1
+                add 1
+                rshift 1
+            }
+            rshift 1
+            add 1
+            rshift 2
+        }
+        lshift 5
+    }
+    @ m+1
+    add_to(m+4, q)
+    add_to(m+3, r)
+}

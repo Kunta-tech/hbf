@@ -1,11 +1,25 @@
 ; defined function main
 {
-    new __hbf_cell_vals_0 65
-    new __hbf_cell_vals_1 66
-    new __hbf_cell_vals_2 67
-    set __hbf_cell_vals_1 68
-    print __hbf_cell_vals_0
-    print __hbf_cell_vals_1
-    print __hbf_cell_vals_2
-    print '\n'
+    new __hbf_cell_vals_0 1
+    goto __hbf_cell_vals_0
+    set 65
+    new __hbf_cell_vals_1 1
+    goto __hbf_cell_vals_1
+    set 66
+    new __hbf_cell_vals_2 1
+    goto __hbf_cell_vals_2
+    set 67
+    goto __hbf_cell_vals_1
+    set 68
+    goto __hbf_cell_vals_0
+    print
+    goto __hbf_cell_vals_1
+    print
+    goto __hbf_cell_vals_2
+    print
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '\n'
+print
+free __hbf_tmp
 }

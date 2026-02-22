@@ -1,0 +1,4 @@
+func lib_func(a) {
+    goto a
+    add 5
+}

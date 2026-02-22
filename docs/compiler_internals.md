@@ -359,39 +359,57 @@ fn inline_function(&mut self, params: Vec<(Type, String)>,
 
 ### 5. BFO Compiler (`src/bfo_compiler.rs`)
 
-**Responsibility**: Compile BFO to internal IR
+**Responsibility**: Compile BFO to internal IR while managing variable scoping and memory allocation.
 
 **Key Data Structures**:
 ```rust
 struct BFOCompiler {
-    cells: HashMap<String, usize>,      // Variable → tape position
-    next_cell: usize,                   // Next free cell
-    current_pos: usize,                 // Current tape pointer
-    scopes: Vec<HashMap<String, usize>>, // Scope stack
+    instructions: Vec<BFO>,
+    variables: Vec<(String, usize, usize, bool)>, // [name, address, size, is_owned]
+    scope_marks: Vec<usize>,                       // Stack of indices into 'variables'
+    current_pointer: usize,                        // Current tape position
+    next_free_cell: usize,                         // Next address for new tape memory
+    free_pool: Vec<(usize, usize)>,                // LIFO stack of freed memory segments
+    touched_cells: HashSet<usize>,                 // Tracks cells used at least once
 }
 ```
 
-**Compilation Process**:
-1. Parse BFO instructions
-2. Allocate tape cells for variables
-3. Track pointer position
-4. Generate pointer movement instructions
-5. Emit cell manipulation operations
+**Architecture Fundamentals**:
+
+1. **Stack-Based Scoping**:
+   - Variables are pushed onto the `variables` stack.
+   - `scope_marks` tracks where each context (block, function) starts.
+   - When exiting a scope, the compiler pops variables back to the last mark.
+
+2. **LIFO Memory Allocation**:
+   - Freed memory segments are stored in a `free_pool` stack.
+   - New allocations check the pool from the end (**Last-In, First-Out**) to prioritize reuse of the most recently freed memory.
+   - If no suitable segment is found, the tape is extended.
+
+3. **Ownership Tracking**:
+   - `is_owned` determines if a name represents an original allocation (`new`) or a reference (`ref`, `alias`, parameter).
+   - Only **owned** segments are returned to the `free_pool` when their scope ends.
+
+4. **Redundant Clear Optimization**:
+   - The compiler assumes all cells are `0` at program start.
+   - `touched_cells` tracks every address ever used.
+   - A `Clear` instruction for a `new` segment is **skipped** if that address has never been touched before in the program's lifecycle.
 
 ### 6. Brainfuck Codegen (`src/bf_codegen.rs`)
 
-**Responsibility**: Generate final Brainfuck code
+**Responsibility**: Translate IR instructions into minimal, optimized Brainfuck code.
 
-**IR to BF Mapping**:
-```rust
-BFOp::Add(n) → "+".repeat(n)
-BFOp::Sub(n) → "-".repeat(n)
-BFOp::MoveRight(n) → ">".repeat(n)
-BFOp::MoveLeft(n) → "<".repeat(n)
-BFOp::Loop(ops) → "[" + codegen(ops) + "]"
-BFOp::Output → "."
-BFOp::Input → ","
-```
+**Key Features**:
+
+1. **Whitespace-Aware Peephole Optimizer**:
+   - The `emit_char` helper peeks back through the generated output string, skipping over formatting whitespace and newlines.
+   - Redundant operations like `+-` or `<>` are cancelled even if separated by formatting.
+
+2. **Intelligent State Tracking**:
+   - `dirty_cells` tracks which cells might be non-zero at any point.
+   - Avoids emitting `[-]` (Clear) if a cell is guaranteed to be clean.
+   - Every loop exit (`]`) is recognized as a guarantee that the current cell is zero.
+   - Absolute jumps (`@` in BFO, `ForceGoto` in IR) reset the "unknown pointer offset" state, enabling optimizations to resume after complex loops.
 
 ## Critical Implementation Details
 

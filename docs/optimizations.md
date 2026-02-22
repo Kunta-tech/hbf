@@ -533,6 +533,28 @@ print first
 print 53
 ```
 
+## 8. Backend Optimizations (BFO → BF)
+
+While frontend optimizations erase high-level abstractions, the intermediate BFO stage and the final Brainfuck codegen perform low-level hardware-specific optimizations.
+
+### 8.1. Whitespace-Aware Peephole Optimizer
+The final codegen (`bf_codegen.rs`) implements a "smart" peephole optimizer. Most Brainfuck optimizers fail when code is formatted with newlines or spaces. HBF's optimizer peeks through the output buffer and ignores non-functional characters:
+- `+ \n -` → Cancelled to nothing
+- `> \r <` → Cancelled to nothing
+- `+ + -` → Optimized to `+`
+
+### 8.2. Intelligent State Tracking
+The code generator maintains a virtual model of the tape state during compilation:
+- **Dirty Cell Tracking**: The compiler knows which cells might contain non-zero values. `Clear` instructions (`[-]`) are automatically skipped if a cell is already guaranteed to be clean.
+- **Loop-Exit Guarantee**: The optimizer recognizes that every Brainfuck loop `[...]` only exits when the current cell is exactly zero. It automatically removes the "dirty" flag from a cell upon loop termination.
+- **Jump Resumption**: Absolute jumps (`@`) reset the pointer state, allowing optimizations to resume accurately even after complex, unbalanced loops that might lose the relative pointer position.
+
+### 8.3. "Initial Zero" & Fresh Memory Optimization
+Based on the assumption that all Brainfuck cells are zero at the start of the program:
+1. The compiler tracks a `touched_cells` set.
+2. Any `new` allocation that uses "fresh" memory (addresses never before touched by the program) skips its initial zeroing pass.
+3. Only **recycled** memory from the LIFO free pool is explicitly cleared, ensuring minimal `[-]` instructions in the output.
+
 ## Optimization Metrics
 
 For a typical HBF program:
@@ -543,15 +565,15 @@ For a typical HBF program:
 | Loop Instructions | 50 | 0 | 100% |
 | Function Calls | 5 | 0 | 100% |
 | BFO Lines | 200 | 15 | 92.5% |
+| BF Gen Steps | 100% | 40% | 60% |
 | Tape Cells Used | 15 | 3 | 80% |
 
 ## Future Optimizations
 
-1. **Dead Code Elimination**: Remove unused functions and variables
-2. **Common Subexpression Elimination**: Reuse computed values
-3. **Strength Reduction**: Replace expensive operations with cheaper ones
-4. **Peephole Optimization**: Optimize small instruction sequences
-5. **Register Allocation**: Minimize tape cell usage further
+1. **Dead Code Elimination**: Remove unused functions and variables at the BFO level.
+2. **Global Cell Lifecycle Analysis**: Predict cell usage across function boundaries.
+3. **Strength Reduction**: Replace expensive operations with modular arithmetic.
+4. **Register Allocation**: Optimize tape layout based on frequency of cross-cell access.
 
 ## Debugging Optimizations
 
@@ -559,19 +581,17 @@ To understand what optimizations are applied:
 
 1. **View BFO**: See the optimized intermediate representation
    ```bash
-   cargo run -- compile example.hbf
+   hbf -c example.hbf
    cat example.bfo
    ```
 
-2. **Add Debug Prints**: Temporarily add logging in optimization modules
-   ```rust
-   eprintln!("Folded {:?} to {:?}", original, folded);
+2. **View BF**: Inspect the final Brainfuck code for redundant patterns.
+   ```bash
+   hbf -s example.bfo
+   cat example.bf
    ```
 
-3. **Compare Sizes**: Check BFO line count vs source line count
-   ```bash
-   wc -l example.hbf example.bfo
-   ```
+3. **Compiler Trace**: Use internal debug logging to see state tracking in action.
 
 ## Optimization Trade-offs
 
@@ -581,5 +601,6 @@ To understand what optimizations are applied:
 | Loop Unrolling | Zero runtime overhead | Larger BFO for big loops |
 | Function Inlining | Cross-function optimization | Code duplication |
 | Constant Folding | Faster execution | Longer compile time |
+| State Tracking | Minimal `[-]` and `<>` | Complexity in codegen |
 
 **Overall**: HBF prioritizes **runtime performance** over compile time and code size.

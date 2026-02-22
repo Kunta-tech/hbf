@@ -1,0 +1,10 @@
+; test_ref.bfo
+new a 2
+ref b a+1
+
+goto a
+set 10
+goto b
+set 20
+
+; final BF should be: ++++++++++>++++++++++++++++++++

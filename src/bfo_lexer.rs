@@ -9,15 +9,19 @@ pub enum BFOToken {
     Add,
     Sub,
     Print,
-    While,
+    Loop,
     Free,
     Ref,
     Scan,
-    Move,
+    Goto,
+    LShift,
+    Include,
+    RShift,
     
     // Literals
     Number(i32),
     Char(char),
+    String(String),
     Identifier(String),
     
     // Delimiters
@@ -26,6 +30,8 @@ pub enum BFOToken {
     LBrace,
     RBrace,
     Comma,
+    Plus,
+    At,
     
     EOF,
 }
@@ -67,6 +73,14 @@ impl<'a> BFOLexer<'a> {
                     self.input.next();
                     BFOToken::Comma
                 }
+                '+' => {
+                    self.input.next();
+                    BFOToken::Plus
+                }
+                '@' => {
+                    self.input.next();
+                    BFOToken::At
+                }
                 '\'' => self.read_char_literal(),
                 ';' => {
                     // Skip comments
@@ -80,6 +94,7 @@ impl<'a> BFOLexer<'a> {
                 }
                 '0'..='9' | '-' => self.read_number(),
                 'a'..='z' | 'A'..='Z' | '_' => self.read_identifier(),
+                '"' => self.read_string_literal(),
                 _ => panic!("Unexpected character in BFO: {}", ch),
             },
         }
@@ -151,6 +166,32 @@ impl<'a> BFOLexer<'a> {
         BFOToken::Char(ch)
     }
 
+    fn read_string_literal(&mut self) -> BFOToken {
+        self.input.next(); // Skip opening "
+        let mut s = String::new();
+        while let Some(&ch) = self.input.peek() {
+            if ch == '"' {
+                self.input.next();
+                return BFOToken::String(s);
+            }
+            if ch == '\\' {
+                self.input.next();
+                match self.input.next() {
+                    Some('n') => s.push('\n'),
+                    Some('t') => s.push('\t'),
+                    Some('\\') => s.push('\\'),
+                    Some('"') => s.push('"'),
+                    Some(c) => s.push(c),
+                    None => break,
+                }
+            } else {
+                s.push(ch);
+                self.input.next();
+            }
+        }
+        panic!("Unterminated string literal");
+    }
+
     fn read_identifier(&mut self) -> BFOToken {
         let mut ident = String::new();
         
@@ -170,11 +211,14 @@ impl<'a> BFOLexer<'a> {
             "add" => BFOToken::Add,
             "sub" => BFOToken::Sub,
             "print" => BFOToken::Print,
-            "while" => BFOToken::While,
+            "loop" => BFOToken::Loop,
             "free" => BFOToken::Free,
             "ref" => BFOToken::Ref,
             "scan" => BFOToken::Scan,
-            "move" => BFOToken::Move,
+            "goto" => BFOToken::Goto,
+            "lshift" => BFOToken::LShift,
+            "rshift" => BFOToken::RShift,
+            "include" => BFOToken::Include,
             _ => BFOToken::Identifier(ident),
         }
     }

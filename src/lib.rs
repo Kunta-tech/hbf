@@ -20,7 +20,8 @@ pub fn build_bf(bfo_filename: &str, out_filename: &str) {
     let bfo_program = bfo_parser.parse();
 
     let mut bfo_compiler = bfo_compiler::BFOCompiler::new();
-    let instructions = bfo_compiler.compile(bfo_program);
+    let base_dir = std::path::Path::new(bfo_filename).parent().unwrap_or(std::path::Path::new("."));
+    let instructions = bfo_compiler.compile(bfo_program, base_dir);
 
     let mut bf_codegen = bf_codegen::Codegen::new();
     let bf_code = bf_codegen.generate(&instructions);

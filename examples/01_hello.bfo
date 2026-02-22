@@ -1,17 +1,73 @@
 ; defined function main
 {
-    print 'H'
-    print 'e'
-    print 'l'
-    print 'l'
-    print 'o'
-    print ','
-    print ' '
-    print 'W'
-    print 'o'
-    print 'r'
-    print 'l'
-    print 'd'
-    print '!'
-    print '\n'
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'H'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'e'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'l'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'l'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'o'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set ','
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set ' '
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'W'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'o'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'r'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'l'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set 'd'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '!'
+print
+free __hbf_tmp
+    new __hbf_tmp 1
+    goto __hbf_tmp
+    set '\n'
+print
+free __hbf_tmp
 }

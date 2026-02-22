@@ -71,6 +71,35 @@ sub x y         ; x = x - y
 sub count 5     ; count = count - 5
 ```
 
+#### `scan <var>`
+
+Read a single character from standard input and store it in `<var>`:
+
+```bfo
+scan x          ; x = read_char()
+```
+
+#### `goto <var>`
+
+Move the Brainfuck pointer to the start of variable `<var>`:
+
+```bfo
+goto x          ; Pointer moves to x
+set 10          ; Operates on x
+```
+
+#### `@ <const>`
+
+Move the Brainfuck pointer to an absolute address:
+
+```bfo
+@ 10            ; Pointer moves to cell 10
+set 5           ; Cell 10 = 5
+```
+
+> [!NOTE]
+> Absolute jumps are mostly used by the compiler and standard library for low-level memory management.
+
 #### `print <value>`
 
 Output a value as a character:
@@ -109,6 +138,22 @@ Create a new scope for variables:
 
 > [!NOTE]
 > Block scopes enable cell reuse. Variables declared with `new` inside a block are automatically freed when the block exits.
+
+#### `alias <new_name> <old_name>`
+
+Create an alternative name for an existing variable or segment. Does not allocate new memory.
+
+```bfo
+alias flag status   ; flag now refers to the same cell as status
+```
+
+#### `ref <new_name> <old_name>`
+
+Similar to `alias`, but often used to pass variables into function scopes as references.
+
+```bfo
+ref p x             ; p refers to x
+```
 
 #### `free <var>`
 

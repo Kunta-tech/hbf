@@ -17,44 +17,36 @@ pub enum BFOItem {
     
     // Top-level statement
     Statement(BFOStmt),
+
+    // Include another BFO file
+    Include(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BFOStmt {
-    // set x value
-    Set { name: String, value: BFOValue },
+    // Memory Management
+    New { name: String, size: usize },     // new x 10
+    Free { name: String },                 // free x
+    Goto { value: BFOValue },              // goto x or goto x+2
+    At(BFOValue),                          // @ x or @ x+2
+
+    // Pointer-Relative Operations
+    Shift(isize),                          // shift +/- n
+    Alias { name: String, value: BFOValue }, // ref alias_name existing_var
+
+    // Value Operations (at current pointer)
+    Modify(i16),                           // modify +/- n
+    Set(u8),                               // set 1
+    Print,                                 // print
+    Scan,                                  // scan
+
+    // Control Flow
+    Loop(Vec<BFOStmt>),                    // loop { ... }
     
-    // new x value
-    New { name: String, value: BFOValue },
-    
-    // add x value
-    Add { name: String, value: BFOValue },
-    
-    // sub x value
-    Sub { name: String, value: BFOValue },
-    
-    // print x
-    Print { value: BFOValue },
-    
-    // scan x
-    Scan { name: String },
-    
-    // while x { ... }
-    While { condition: String, body: Vec<BFOStmt> },
-    
-    // function_name(args)
+    // Function Call
     Call { name: String, args: Vec<BFOValue> },
 
-    // free x
-    Free { name: String },
-
-    // move dest src
-    Move { dest: String, src: String },
-
-    // ref alias original
-    Ref { alias: String, original: String },
-
-    // { ... }
+    // { ... } - Block for logical grouping/scoping
     Block(Vec<BFOStmt>),
 }
 
@@ -62,5 +54,5 @@ pub enum BFOStmt {
 pub enum BFOValue {
     Number(i32),
     Char(char),
-    Variable(String),
+    Variable(String, usize),
 }
